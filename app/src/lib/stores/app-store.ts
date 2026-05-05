@@ -7571,8 +7571,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     if (
       changesState.conflictState === null ||
       multiCommitOperationState === null ||
-      multiCommitOperationState.step.kind !==
-        MultiCommitOperationStepKind.ShowConflicts
+      (multiCommitOperationState.step.kind !==
+        MultiCommitOperationStepKind.ShowConflicts &&
+        multiCommitOperationState.step.kind !==
+          MultiCommitOperationStepKind.ShowCopilotConflicts)
     ) {
       return
     }
