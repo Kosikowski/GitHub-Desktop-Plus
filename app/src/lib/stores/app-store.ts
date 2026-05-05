@@ -2902,7 +2902,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.repositoryStateCache.updateMultiCommitOperationState(
       repository,
       () => ({
-        step: { ...step, manualResolutions },
+        step: {
+          ...step,
+          conflictState: { ...step.conflictState, manualResolutions },
+        },
       })
     )
 
@@ -2985,30 +2988,24 @@ export class AppStore extends TypedBaseStore<IAppState> {
       theirBranch,
     }
 
-    if (multiCommitOperationState.useCopilotConflictResolution) {
+    const useCopilot = multiCommitOperationState.useCopilotConflictResolution
+
+    this._setMultiCommitOperationStep(repository, {
+      kind: useCopilot
+        ? MultiCommitOperationStepKind.ShowCopilotConflictsLoading
+        : MultiCommitOperationStepKind.ShowConflicts,
+      conflictState: mcoConflictState,
+    })
+
+    this._showPopup({
+      type: PopupType.MultiCommitOperation,
+      repository,
+    })
+
+    if (useCopilot) {
       // Auto-route to Copilot: the user previously opted into Copilot
       // resolution during this operation, so skip the manual dialog.
-      this._setMultiCommitOperationStep(repository, {
-        kind: MultiCommitOperationStepKind.ShowCopilotConflictsLoading,
-        conflictState: mcoConflictState,
-      })
-
-      this._showPopup({
-        type: PopupType.MultiCommitOperation,
-        repository,
-      })
-
       await this._startCopilotConflictResolution(repository)
-    } else {
-      this._setMultiCommitOperationStep(repository, {
-        kind: MultiCommitOperationStepKind.ShowConflicts,
-        conflictState: mcoConflictState,
-      })
-
-      this._showPopup({
-        type: PopupType.MultiCommitOperation,
-        repository,
-      })
     }
   }
 
