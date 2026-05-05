@@ -60,6 +60,11 @@ export class CopilotConflictsDialog extends React.Component<
 
   private onContinue = async () => {
     this.setState({ isContinuing: true })
+    // Write Copilot resolutions to disk before continuing the operation.
+    // Done here (shared) so it works for merge, rebase, and cherry-pick.
+    await this.props.dispatcher.applyCopilotConflictResolutions(
+      this.props.repository
+    )
     await this.props.onContinueAfterConflicts()
   }
 

@@ -33,11 +33,6 @@ export abstract class Merge extends BaseMultiCommitOperation {
       return
     }
 
-    // If continuing from Copilot resolution, write files to disk and stage now
-    if (state.step.kind === MultiCommitOperationStepKind.ShowCopilotConflicts) {
-      await dispatcher.applyCopilotConflictResolutions(repository)
-    }
-
     const { theirBranch } = state.step.conflictState
     const { currentBranch: ourBranch } = conflictState
     await dispatcher.finishConflictedMerge(

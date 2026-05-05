@@ -1134,7 +1134,7 @@ export class Dispatcher {
 
   /**
    * Write Copilot-resolved file contents to disk and stage them.
-   * Called when the user confirms the resolutions (clicks "Continue Merge").
+   * Called when the user confirms the resolutions from the result dialog.
    */
   public applyCopilotConflictResolutions(
     repository: Repository

@@ -5885,9 +5885,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /**
-   * Orchestrate end-to-end Copilot conflict resolution: call the API, write
-   * resolved content to disk, stage the files, and transition the multi-commit
-   * operation to the result dialog.
+   * Orchestrate Copilot conflict resolution: call the API, emit progress
+   * updates, and transition to the result dialog on success. File writes are
+   * deferred until the user confirms (see _applyCopilotConflictResolutions).
    *
    * This shouldn't be called directly. See `Dispatcher`.
    */
@@ -5913,6 +5913,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       const result = await this._resolveConflictsWithCopilot(
         repository,
         progress => {
+          // Bail if user cancelled while the request was in-flight
+          const current = this.repositoryStateCache.get(repository)
+          const mcoState = current.multiCommitOperationState
+          if (
+            mcoState === null ||
+            mcoState.step.kind !==
+              MultiCommitOperationStepKind.ShowCopilotConflictsLoading
+          ) {
+            return
+          }
           this.repositoryStateCache.updateMultiCommitOperationState(
             repository,
             () => ({ copilotResolutionProgress: progress })
@@ -5920,6 +5930,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
           this.emitUpdate()
         }
       )
+
+      // Re-check state: user may have cancelled during the await
+      const currentState = this.repositoryStateCache.get(repository)
+      const currentMco = currentState.multiCommitOperationState
+      if (
+        currentMco === null ||
+        currentMco.step.kind !==
+          MultiCommitOperationStepKind.ShowCopilotConflictsLoading
+      ) {
+        return
+      }
 
       if (result === null) {
         throw new Error('Copilot conflict resolution returned no results')
@@ -5983,6 +6004,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
+    const pathsToStage: string[] = []
+
     for (const resolution of copilotResolutions) {
       const absolutePath = await resolveWithin(repository.path, resolution.path)
       if (absolutePath === null) {
@@ -5993,8 +6016,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
 
       await writeFile(absolutePath, resolution.resolvedContent, 'utf8')
+      pathsToStage.push(resolution.path)
+    }
+
+    if (pathsToStage.length > 0) {
       await git(
-        ['add', '--', resolution.path],
+        ['add', '--', ...pathsToStage],
         repository.path,
         'copilotConflictResolution'
       )
