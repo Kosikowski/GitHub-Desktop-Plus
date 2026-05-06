@@ -1,0 +1,91 @@
+dialog#copilot-conflicts-loading {
+  width: 560px;
+
+  div.dialog-header {
+    height: auto;
+    flex-wrap: wrap;
+    padding-bottom: var(--spacing);
+
+    h1 {
+      width: auto;
+    }
+
+    .copilot-conflicts-loading-model {
+      flex-basis: 100%;
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary-color);
+      font-weight: var(--font-weight-normal);
+    }
+  }
+
+  .copilot-conflicts-loading-footer {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .copilot-conflicts-loading-content {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+
+    .copilot-conflicts-loading-log {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: var(--spacing);
+      height: 130px;
+      overflow: hidden;
+      // A very subtle fade on the top edge so older messages soften
+      // as they roll off, but only once the log fills up enough to
+      // actually scroll.
+      &.is-scrolling {
+        mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.6) 0,
+          rgba(0, 0, 0, 1) 24px
+        );
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.6) 0,
+          rgba(0, 0, 0, 1) 24px
+        );
+      }
+
+      // Anchored speaker icon — stays put as messages cycle through,
+      // giving the impression that whatever's at the top is being
+      // "said" by Copilot.
+      .copilot-conflicts-loading-log-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        color: var(--text-secondary-color);
+        // Nudge down so the icon visually centers on the first line
+        // of the topmost message (line-height 1.4em on a 14px base
+        // ≈ 19.6px tall, icon is 16px → ~2px offset).
+        margin-top: 2px;
+      }
+
+      .copilot-conflicts-loading-log-messages {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-half);
+        flex: 1 1 auto;
+        min-width: 0;
+
+        .copilot-conflicts-loading-log-line {
+          color: var(--text-secondary-color);
+          margin: 0;
+          line-height: 1.4em;
+          flex-shrink: 0;
+          // Latest entry pops to full color so it's clearly the live one.
+          &:last-child {
+            color: var(--text-color);
+          }
+        }
+      }
+    }
+  }
+}
