@@ -1,5 +1,10 @@
 {
   "releases": {
+    "3.5.9-plus.1": [
+      "[Added] Favourites sidebar — pin frequently-used repositories into named groups for one-click switching, with right-click reassignment and a star toggle on the repository dropdown",
+      "[Changed] Renamed and rebranded as GitHub Desktop + with a distinct bundle id, product name, and Windows identifier so the fork installs alongside the official GitHub Desktop",
+      "[Improved] Sync with upstream: Electron 42 / Node 24.15, Copilot conflict resolution fixes, worktree-aware branch pruning, fast-uri and ip-address dependency bumps"
+    ],
     "3.5.9-beta2": [
       "[Fixed] Add syntax highlighting for .astro files - #21987. Thanks @JunDev76!",
       "[Fixed] Fix Windows scrollbar sync with react-virtualized Grid - #21940",
