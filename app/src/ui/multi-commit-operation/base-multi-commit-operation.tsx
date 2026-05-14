@@ -113,7 +113,10 @@ export abstract class BaseMultiCommitOperation extends React.Component<IMultiCom
     const { repository, dispatcher, state } = this.props
     const { targetBranch, step } = state
 
-    if (step.kind !== MultiCommitOperationStepKind.ShowConflicts) {
+    if (
+      step.kind !== MultiCommitOperationStepKind.ShowConflicts &&
+      step.kind !== MultiCommitOperationStepKind.ShowCopilotConflicts
+    ) {
       this.endFlowInvalidState()
       return
     }
@@ -143,7 +146,10 @@ export abstract class BaseMultiCommitOperation extends React.Component<IMultiCom
     const { repository, dispatcher, workingDirectory, state } = this.props
     const { userHasResolvedConflicts, step } = state
 
-    if (step.kind !== MultiCommitOperationStepKind.ShowConflicts) {
+    if (
+      step.kind !== MultiCommitOperationStepKind.ShowConflicts &&
+      step.kind !== MultiCommitOperationStepKind.ShowCopilotConflicts
+    ) {
       this.endFlowInvalidState()
       return
     }
@@ -174,8 +180,11 @@ export abstract class BaseMultiCommitOperation extends React.Component<IMultiCom
     }
 
     const { conflictState } = step
+    const stepKind = state.useCopilotConflictResolution
+      ? MultiCommitOperationStepKind.ShowCopilotConflicts
+      : MultiCommitOperationStepKind.ShowConflicts
     return dispatcher.setMultiCommitOperationStep(repository, {
-      kind: MultiCommitOperationStepKind.ShowConflicts,
+      kind: stepKind,
       conflictState,
     })
   }
@@ -284,6 +293,9 @@ export abstract class BaseMultiCommitOperation extends React.Component<IMultiCom
             conflictState={step.conflictState}
             workingDirectory={this.props.workingDirectory}
             operationKind={this.props.state.operationDetail.kind}
+            copilotResolutions={this.props.state.copilotResolutions}
+            resolvedExternalEditor={this.props.resolvedExternalEditor}
+            openFileInExternalEditor={this.props.openFileInExternalEditor}
             onContinueAfterConflicts={this.onContinueAfterConflicts}
             onAbort={this.onConfirmingAbort}
           />

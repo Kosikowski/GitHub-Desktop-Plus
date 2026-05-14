@@ -301,6 +301,20 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
   )
 
+  /**
+   * Filter repositories down to favourites. Cached on the repositories array
+   * so unrelated re-renders (e.g. typing in the global filter) preserve the
+   * downstream FavoritesSidebar memoization.
+   */
+  private getFavoriteRepositories = memoizeOne(
+    (
+      repositories: ReadonlyArray<Repository | CloningRepository>
+    ): ReadonlyArray<Repository> =>
+      repositories.filter(
+        (r): r is Repository => r instanceof Repository && r.isFavorite
+      )
+  )
+
   public constructor(props: IAppProps) {
     super(props)
 
@@ -3046,15 +3060,6 @@ export class App extends React.Component<IAppProps, IAppState> {
   private onFavoritesActiveGroupChanged = (id: number | null) => {
     this.props.dispatcher.setFavoritesActiveGroupId(id)
   }
-
-  private getFavoriteRepositories = memoizeOne(
-    (
-      repositories: ReadonlyArray<Repository | CloningRepository>
-    ): ReadonlyArray<Repository> =>
-      repositories.filter(
-        (r): r is Repository => r instanceof Repository && r.isFavorite
-      )
-  )
 
   private renderFavoritesSidebar() {
     const favorites = this.getFavoriteRepositories(this.state.repositories)
