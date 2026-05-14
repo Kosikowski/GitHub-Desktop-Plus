@@ -4,6 +4,7 @@ import {
   RepositoriesDatabase,
   IDatabaseGitHubRepository,
   IDatabaseOwner,
+  IDatabaseRepository,
   getOwnerKey,
 } from '../../src/lib/databases'
 
@@ -111,6 +112,134 @@ describe('RepositoriesDatabase', () => {
     assert.deepStrictEqual(migratedRepoA?.ownerID, migratedOwner?.id)
     assert.deepStrictEqual(migratedOwner?.endpoint, endpoint)
     assert.deepStrictEqual(migratedOwner?.key, getOwnerKey(endpoint, 'DeskTop'))
+
+    await db.delete()
+  })
+
+  it('migrates from version 9 to 10 by adding the favoriteGroups table', async () => {
+    const dbName = 'TestRepositoriesDatabase'
+    let db = new RepositoriesDatabase(dbName, 9)
+    await db.delete()
+    await db.open()
+
+    type RepoModelV9 = Omit<IDatabaseRepository, 'favoriteGroupId'>
+    const v9ReposTable = db.table<RepoModelV9, number>('repositories')
+
+    const repoId = await v9ReposTable.add({
+      gitHubRepositoryID: null,
+      path: '/path/legacy',
+      alias: null,
+      missing: false,
+    })
+
+    db.close()
+
+    db = new RepositoriesDatabase(dbName, 10)
+    await db.open()
+
+    const migrated = await db.repositories.get(repoId)
+    assert(migrated !== undefined)
+    assert.equal(migrated.favoriteGroupId, undefined)
+
+    const groups = await db.favoriteGroups.toArray()
+    assert.equal(groups.length, 0)
+
+    await db.delete()
+  })
+
+  it('preserves an existing favoriteGroupId across re-opens at v10', async () => {
+    const dbName = 'TestRepositoriesDatabase'
+    let db = new RepositoriesDatabase(dbName, 10)
+    await db.delete()
+    await db.open()
+
+    const groupId = await db.favoriteGroups.add({
+      name: 'Existing',
+      sortOrder: 0,
+    })
+    const repoId = await db.repositories.add({
+      gitHubRepositoryID: null,
+      path: '/path/already-pinned',
+      alias: null,
+      missing: false,
+      favoriteGroupId: groupId,
+    })
+
+    db.close()
+
+    db = new RepositoriesDatabase(dbName, 10)
+    await db.open()
+
+    const migrated = await db.repositories.get(repoId)
+    assert(migrated !== undefined)
+    assert.equal(migrated.favoriteGroupId, groupId)
+
+    const groups = await db.favoriteGroups.toArray()
+    assert.equal(groups.length, 1)
+    assert.equal(groups[0].name, 'Existing')
+
+    await db.delete()
+  })
+
+  it('migrates from version 10 to 11 by backfilling nameKey and pruning case-collisions', async () => {
+    const dbName = 'TestRepositoriesDatabase'
+    let db = new RepositoriesDatabase(dbName, 10)
+    await db.delete()
+    await db.open()
+
+    // Two rows that only differ by case — only one should survive at v11
+    // because the new index is case-insensitive.
+    await db.favoriteGroups.add({ name: 'Work', sortOrder: 0 })
+    await db.favoriteGroups.add({ name: 'WORK', sortOrder: 1 })
+    await db.favoriteGroups.add({ name: 'Personal', sortOrder: 2 })
+
+    db.close()
+
+    db = new RepositoriesDatabase(dbName, 11)
+    await db.open()
+
+    const groups = await db.favoriteGroups.toArray()
+    const names = groups.map(g => g.name).sort()
+    assert.deepEqual(names, ['Personal', 'Work'])
+    for (const g of groups) {
+      assert.equal(g.nameKey, g.name.toLowerCase())
+    }
+
+    await db.delete()
+  })
+
+  it('remaps repositories pointing at dropped duplicates during the v10→v11 migration', async () => {
+    const dbName = 'TestRepositoriesDatabase'
+    let db = new RepositoriesDatabase(dbName, 10)
+    await db.delete()
+    await db.open()
+
+    const keptId = await db.favoriteGroups.add({ name: 'Work', sortOrder: 0 })
+    const droppedId = await db.favoriteGroups.add({
+      name: 'WORK',
+      sortOrder: 1,
+    })
+
+    const repoId = await db.repositories.add({
+      gitHubRepositoryID: null,
+      path: '/path/dup-member',
+      alias: null,
+      missing: false,
+      favoriteGroupId: droppedId,
+    })
+
+    db.close()
+
+    db = new RepositoriesDatabase(dbName, 11)
+    await db.open()
+
+    const migrated = await db.repositories.get(repoId)
+    assert(migrated !== undefined)
+    assert.equal(migrated.favoriteGroupId, keptId)
+
+    const groups = await db.favoriteGroups.toArray()
+    assert.equal(groups.length, 1)
+    assert.equal(groups[0].id, keptId)
 
     await db.delete()
   })

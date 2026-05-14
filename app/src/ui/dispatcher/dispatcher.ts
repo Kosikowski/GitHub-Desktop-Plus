@@ -68,6 +68,7 @@ import { CloningRepository } from '../../models/cloning-repository'
 import { Commit, ICommitContext, CommitOneLine } from '../../models/commit'
 import { ICommitMessage } from '../../models/commit-message'
 import { DiffSelection, ImageDiffType, ITextDiff } from '../../models/diff'
+import { FavoriteGroup } from '../../models/favorite-group'
 import { FetchType } from '../../models/fetch'
 import { GitHubRepository } from '../../models/github-repository'
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
@@ -858,6 +859,40 @@ export class Dispatcher {
     newAlias: string | null
   ): Promise<void> {
     return this.appStore._changeRepositoryAlias(repository, newAlias)
+  }
+
+  /**
+   * Move a repository into a favorites group, or remove it from any group
+   * by passing `null`.
+   */
+  public setRepositoryFavoriteGroup(
+    repository: Repository,
+    favoriteGroupId: number | null
+  ): Promise<void> {
+    return this.appStore._setRepositoryFavoriteGroup(
+      repository,
+      favoriteGroupId
+    )
+  }
+
+  /** Create a new favorites group. Returns the created group. */
+  public addFavoriteGroup(name: string): Promise<FavoriteGroup> {
+    return this.appStore._addFavoriteGroup(name)
+  }
+
+  /** Rename an existing favorites group. */
+  public renameFavoriteGroup(id: number, name: string): Promise<void> {
+    return this.appStore._renameFavoriteGroup(id, name)
+  }
+
+  /** Remove a favorites group; member repos are no longer favorites. */
+  public removeFavoriteGroup(id: number): Promise<void> {
+    return this.appStore._removeFavoriteGroup(id)
+  }
+
+  /** Set which favorites group tab is currently active in the sidebar. */
+  public setFavoritesActiveGroupId(id: number | null): void {
+    this.appStore._setFavoritesActiveGroupId(id)
   }
 
   /** Rename the branch to a new name. */
@@ -4132,6 +4167,10 @@ export class Dispatcher {
       placeholderId,
       bypassURL
     )
+  }
+
+  public toggleFavoritesSidebarVisibility() {
+    this.appStore._toggleFavoritesSidebarVisibility()
   }
 
   public toggleChangesFilterVisibility() {

@@ -1,20 +1,16 @@
-# [GitHub Desktop](https://desktop.github.com)
+# [GitHub Desktop (with Favourites)](https://desktop.github.com)
 
 [GitHub Desktop](https://desktop.github.com/) is an open-source [Electron](https://www.electronjs.org/)-based
 GitHub app. It is written in [TypeScript](https://www.typescriptlang.org) and
-uses [React](https://reactjs.org/).
+uses [React](https://reactjs.org/). This fork adds a **favourites sidebar**
+for one-click switching between the repositories you spend most of your time
+in, organised into named groups.
 
-<picture>
-  <source
-    srcset="https://user-images.githubusercontent.com/634063/202742848-63fa1488-6254-49b5-af7c-96a6b50ea8af.png"
-    media="(prefers-color-scheme: dark)"
-  />
-  <img
-    width="1072"
-    src="https://user-images.githubusercontent.com/634063/202742985-bb3b3b94-8aca-404a-8d8a-fd6a6f030672.png"
-    alt="A screenshot of the GitHub Desktop application showing changes being viewed and committed with two attributed co-authors"
-  />
-</picture>
+<img
+  width="1072"
+  src="https://github.com/Kosikowski/desktop/raw/pr-assets/docs/favorites-pr/sidebar.png"
+  alt="A screenshot of GitHub Desktop showing the favourites sidebar with two groups (briefcase and house) and a hover tooltip on a repository"
+/>
 
 ## Where can I get it?
 

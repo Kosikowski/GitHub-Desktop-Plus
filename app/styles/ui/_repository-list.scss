@@ -65,6 +65,36 @@
     .alias {
       font-style: italic;
     }
+
+    .favorite-toggle {
+      flex-shrink: 0;
+      margin-left: var(--spacing-half);
+      padding: 2px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary-color);
+      opacity: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--border-radius);
+
+      &.active {
+        opacity: 1;
+        color: var(--favorite-active-color);
+      }
+
+      &:hover,
+      &:focus-visible {
+        opacity: 1;
+        background: var(--box-hover-background-color);
+      }
+    }
+
+    &:hover .favorite-toggle {
+      opacity: 1;
+    }
   }
 
   .filter-list-group-header {
@@ -164,7 +194,8 @@
 }
 
 .repository-list,
-.repository-list-item-tooltip {
+.repository-list-item-tooltip,
+.favorites-sidebar {
   .repo-indicators {
     margin-left: auto;
     display: flex;

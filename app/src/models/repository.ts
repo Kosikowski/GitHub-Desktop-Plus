@@ -58,7 +58,12 @@ export class Repository {
      * onboarding flow. Tutorial repositories trigger a tutorial user experience
      * which introduces new users to some core concepts of Git and GitHub.
      */
-    public readonly isTutorialRepository: boolean = false
+    public readonly isTutorialRepository: boolean = false,
+    /**
+     * Identifier of the favorite group this repository belongs to, or null
+     * if the repository is not in any favorites group.
+     */
+    public readonly favoriteGroupId: number | null = null
   ) {
     this.mainWorkTree = { path }
     this.name = (gitHubRepository && gitHubRepository.name) || getBaseName(path)
@@ -70,8 +75,14 @@ export class Repository {
       this.missing,
       this.alias,
       this.workflowPreferences.forkContributionTarget,
-      this.isTutorialRepository
+      this.isTutorialRepository,
+      this.favoriteGroupId
     )
+  }
+
+  /** Convenience: a repository is a favorite iff it belongs to a group. */
+  public get isFavorite(): boolean {
+    return this.favoriteGroupId !== null
   }
 
   public get path(): string {

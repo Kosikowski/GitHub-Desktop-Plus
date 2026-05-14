@@ -75,6 +75,7 @@ import {
   getNonForkGitHubRepository,
   isForkedRepositoryContributingToParent,
 } from '../../models/repository'
+import { FavoriteGroup } from '../../models/favorite-group'
 import {
   CommittedFileChange,
   WorkingDirectoryFileChange,
@@ -505,9 +506,20 @@ const commitMessageGenerationButtonClickedKey =
   'commit-message-generation-button-clicked'
 
 export const showChangesFilterKey = 'show-changes-filter'
+export const showChangesFilterDefault = true
+
+export const showFavoritesSidebarKey = 'show-favorites-sidebar'
+export const showFavoritesSidebarDefault = false
+export const favoritesActiveGroupIdKey = 'favorites-active-group-id'
 
 const selectedCopilotModelsKey = 'selected-copilot-models'
-export const showChangesFilterDefault = true
+
+/**
+ * Hard cap on favorite groups (sidebar tabs). Source of truth lives next to
+ * the Dexie transaction that enforces it; re-exported here so UI imports
+ * keep working without reaching into the store module directly.
+ */
+export { MaxFavoriteTabs } from './repositories-store'
 
 export class AppStore extends TypedBaseStore<IAppState> {
   private readonly gitStoreCache: GitStoreCache
@@ -667,6 +679,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private commitMessageGenerationButtonClicked: boolean = false
 
   private showChangesFilter: boolean = false
+  private showFavoritesSidebar: boolean = showFavoritesSidebarDefault
+  private favoriteGroups: ReadonlyArray<FavoriteGroup> = []
+  private favoritesActiveGroupId: number | null = null
 
   private selectedCopilotModels: CopilotModelSelections = {}
   private copilotModels: ReadonlyArray<ModelInfo> | null = null
@@ -1182,6 +1197,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitMessageGenerationButtonClicked:
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
+      showFavoritesSidebar: this.showFavoritesSidebar,
+      favoriteGroups: this.favoriteGroups,
+      favoritesActiveGroupId: this.resolveActiveFavoritesGroupId(),
       selectedCopilotModels: this.selectedCopilotModels,
       copilotModels: this.copilotModels,
       copilotAvailable: this.copilotStore.isAvailable,
@@ -2242,9 +2260,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** Load the initial state for the app. */
   public async loadInitialState() {
-    const [accounts, repositories] = await Promise.all([
+    const [accounts, repositories, favoriteGroups] = await Promise.all([
       this.accountsStore.getAll(),
       this.repositoriesStore.getAll(),
+      this.repositoriesStore.getAllFavoriteGroups(),
     ])
 
     log.info(
@@ -2256,6 +2275,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.accounts = accounts
     this.repositories = repositories
+    this.favoriteGroups = favoriteGroups
 
     this.updateRepositorySelectionAfterRepositoriesChanged()
 
@@ -2447,6 +2467,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
       showChangesFilterKey,
       showChangesFilterDefault
     )
+
+    this.showFavoritesSidebar = getBoolean(
+      showFavoritesSidebarKey,
+      showFavoritesSidebarDefault
+    )
+
+    this.favoritesActiveGroupId = getNumber(favoritesActiveGroupIdKey) ?? null
 
     this.selectedCopilotModels = this.loadCopilotModelSelections()
     this.byokProviders = loadBYOKProviders()
@@ -2678,6 +2705,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       hasCurrentPullRequest: currentPullRequest !== null,
       askForConfirmationWhenStashingAllChanges,
       isChangesFilterVisible: this.showChangesFilter,
+      isFavoritesSidebarVisible: this.showFavoritesSidebar,
     })
   }
 
@@ -4548,6 +4576,102 @@ export class AppStore extends TypedBaseStore<IAppState> {
     newAlias: string | null
   ): Promise<void> {
     return this.repositoriesStore.updateRepositoryAlias(repository, newAlias)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _setRepositoryFavoriteGroup(
+    repository: Repository,
+    favoriteGroupId: number | null
+  ): Promise<void> {
+    // Reveal the sidebar on first pin only when the user has never expressed
+    // a visibility preference (no stored value yet). Once they have toggled
+    // it via the View menu — even to "off" — we honour that forever.
+    const userHasNeverToggled =
+      getBoolean(showFavoritesSidebarKey) === undefined
+    const shouldRevealSidebar = favoriteGroupId !== null && userHasNeverToggled
+
+    await this.repositoriesStore.setRepositoryFavoriteGroup(
+      repository,
+      favoriteGroupId
+    )
+    // The set of favorite groups doesn't change when a repo moves between
+    // them, so don't refreshFavoriteGroups here — the store's own
+    // `emitUpdatedRepositories` (queued by the call above) is what carries
+    // the repo's new favoriteGroupId into the next render.
+
+    if (shouldRevealSidebar && !this.showFavoritesSidebar) {
+      this.showFavoritesSidebar = true
+      setBoolean(showFavoritesSidebarKey, true)
+      this.updateMenuLabelsForSelectedRepository()
+      this.emitUpdate()
+    }
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _addFavoriteGroup(name: string): Promise<FavoriteGroup> {
+    // Cap and case-insensitive uniqueness are enforced by the store inside
+    // the same Dexie transaction as the insert — that's the only safe spot
+    // when multiple windows can race.
+    const group = await this.repositoriesStore.addFavoriteGroup(name)
+    await this.refreshFavoriteGroups()
+    // Activate the freshly created group so the sidebar tab follows the
+    // user's intent — especially in the "create + assign" flow where a repo
+    // is being moved into the new group.
+    this._setFavoritesActiveGroupId(group.id)
+    return group
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _renameFavoriteGroup(id: number, name: string): Promise<void> {
+    await this.repositoriesStore.renameFavoriteGroup(id, name)
+    await this.refreshFavoriteGroups()
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _removeFavoriteGroup(id: number): Promise<void> {
+    await this.repositoriesStore.removeFavoriteGroup(id)
+    // If the deleted group was the active one, clear the persisted pointer
+    // so `resolveActiveFavoritesGroupId` doesn't keep papering over a stale
+    // localStorage value on every render.
+    if (this.favoritesActiveGroupId === id) {
+      this._setFavoritesActiveGroupId(null)
+    }
+    await this.refreshFavoriteGroups()
+  }
+
+  private async refreshFavoriteGroups() {
+    this.favoriteGroups = await this.repositoriesStore.getAllFavoriteGroups()
+    this.emitUpdate()
+  }
+
+  /**
+   * Resolve the active favorites group id, falling back to the first group
+   * if the persisted value no longer exists. Returns `null` when there are
+   * no groups.
+   */
+  private resolveActiveFavoritesGroupId(): number | null {
+    const { favoritesActiveGroupId, favoriteGroups } = this
+    if (
+      favoritesActiveGroupId !== null &&
+      favoriteGroups.some(g => g.id === favoritesActiveGroupId)
+    ) {
+      return favoritesActiveGroupId
+    }
+    return favoriteGroups[0]?.id ?? null
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public _setFavoritesActiveGroupId(id: number | null) {
+    if (id === this.favoritesActiveGroupId) {
+      return
+    }
+    this.favoritesActiveGroupId = id
+    if (id === null) {
+      localStorage.removeItem(favoritesActiveGroupIdKey)
+    } else {
+      setNumber(favoritesActiveGroupIdKey, id)
+    }
+    this.emitUpdate()
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
@@ -9299,6 +9423,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
   public _toggleChangesFilterVisibility() {
     this.showChangesFilter = !this.showChangesFilter
     setBoolean(showChangesFilterKey, this.showChangesFilter)
+    this.updateMenuLabelsForSelectedRepository()
+    this.emitUpdate()
+  }
+
+  public _toggleFavoritesSidebarVisibility() {
+    this.showFavoritesSidebar = !this.showFavoritesSidebar
+    setBoolean(showFavoritesSidebarKey, this.showFavoritesSidebar)
     this.updateMenuLabelsForSelectedRepository()
     this.emitUpdate()
   }

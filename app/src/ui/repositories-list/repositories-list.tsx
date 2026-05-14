@@ -1,6 +1,9 @@
 import * as React from 'react'
 
-import { commitGrammar, RepositoryListItem } from './repository-list-item'
+import {
+  RepositoryListItem,
+  renderRepositoryRowFocusTooltip,
+} from './repository-list-item'
 import {
   groupRepositories,
   IRepositoryListItem,
@@ -11,6 +14,7 @@ import {
 import { IFilterListGroup } from '../lib/filter-list'
 import { IMatches } from '../../lib/fuzzy-find'
 import { ILocalRepositoryState, Repository } from '../../models/repository'
+import { FavoriteGroup } from '../../models/favorite-group'
 import { Dispatcher } from '../dispatcher'
 import { Button } from '../lib/button'
 import { Octicon } from '../octicons'
@@ -22,10 +26,12 @@ import { encodePathAsUrl } from '../../lib/path'
 import { TooltippedContent } from '../lib/tooltipped-content'
 import memoizeOne from 'memoize-one'
 import { KeyboardShortcut } from '../keyboard-shortcut/keyboard-shortcut'
-import { generateRepositoryListContextMenu } from '../repositories-list/repository-list-item-context-menu'
+import {
+  buildFavoriteAssignmentItems,
+  generateRepositoryListContextMenu,
+} from '../repositories-list/repository-list-item-context-menu'
 import { SectionFilterList } from '../lib/section-filter-list'
 import { assertNever } from '../../lib/fatal-error'
-import { IAheadBehind } from '../../models/branch'
 
 const BlankSlateImage = encodePathAsUrl(__dirname, 'static/empty-no-repo.svg')
 
@@ -74,6 +80,9 @@ interface IRepositoriesListProps {
   readonly filterText: string
 
   readonly dispatcher: Dispatcher
+
+  /** All favorite groups (for the row context menu's "Add to" submenu). */
+  readonly favoriteGroups: ReadonlyArray<FavoriteGroup>
 }
 
 interface IRepositoriesListState {
@@ -162,81 +171,19 @@ export class RepositoriesList extends React.Component<
         matches={matches}
         aheadBehind={item.aheadBehind}
         changedFilesCount={item.changedFilesCount}
+        onManageFavorite={this.onManageFavorite}
       />
-    )
-  }
-
-  private getAheadBehindTooltip = (aheadBehind: IAheadBehind | null) => {
-    if (aheadBehind === null) {
-      return null
-    }
-
-    const { ahead, behind } = aheadBehind
-
-    if (behind === 0 && ahead === 0) {
-      return null
-    }
-
-    return (
-      'The currently checked out branch is' +
-      (behind ? ` ${commitGrammar(behind)} behind ` : '') +
-      (behind && ahead ? 'and' : '') +
-      (ahead ? ` ${commitGrammar(ahead)} ahead of ` : '') +
-      'its tracked branch.'
     )
   }
 
   private renderRowFocusTooltip = (
     item: IRepositoryListItem
   ): JSX.Element | string | null => {
-    const { repository, aheadBehind, changedFilesCount } = item
-    const gitHubRepo =
-      repository instanceof Repository ? repository.gitHubRepository : null
-    const alias = repository instanceof Repository ? repository.alias : null
-    const realName = gitHubRepo ? gitHubRepo.fullName : repository.name
-    const aheadBehindTooltip = this.getAheadBehindTooltip(aheadBehind)
-    const hasChanges = changedFilesCount > 0
-    const uncommittedChangesTooltip = hasChanges
-      ? `There are uncommitted changes in this repository.`
-      : null
-
-    const ahead = aheadBehind?.ahead ?? 0
-    const behind = aheadBehind?.behind ?? 0
-
-    return (
-      <div className="repository-list-item-tooltip list-item-tooltip">
-        <div>
-          <div className="label">Full Name: </div>
-          {realName}
-          {alias && <> ({alias})</>}
-        </div>
-        <div>
-          <div className="label">Path: </div>
-          {repository.path}
-        </div>
-        {aheadBehindTooltip && (
-          <div>
-            <div className="label">
-              <div className="ahead-behind">
-                {ahead > 0 && <Octicon symbol={octicons.arrowUp} />}
-                {behind > 0 && <Octicon symbol={octicons.arrowDown} />}
-              </div>
-            </div>
-            {aheadBehindTooltip}
-          </div>
-        )}
-        {uncommittedChangesTooltip && (
-          <div>
-            <div className="label">
-              <span className="change-indicator-wrapper">
-                <Octicon symbol={octicons.dotFill} />
-              </span>
-            </div>
-            {uncommittedChangesTooltip}
-          </div>
-        )}
-      </div>
-    )
+    return renderRepositoryRowFocusTooltip({
+      repository: item.repository,
+      aheadBehind: item.aheadBehind,
+      changedFilesCount: item.changedFilesCount,
+    })
   }
 
   private getGroupLabel(group: RepositoryListGroup) {
@@ -296,9 +243,13 @@ export class RepositoriesList extends React.Component<
       externalEditorLabel: this.props.externalEditorLabel,
       onChangeRepositoryAlias: this.onChangeRepositoryAlias,
       onRemoveRepositoryAlias: this.onRemoveRepositoryAlias,
+      onSetRepositoryFavoriteGroup: this.onSetRepositoryFavoriteGroup,
+      onCreateFavoriteGroupForRepository:
+        this.onCreateFavoriteGroupForRepository,
       onViewOnGitHub: this.props.onViewOnGitHub,
       repository: item.repository,
       shellLabel: this.props.shellLabel,
+      favoriteGroups: this.props.favoriteGroups,
     })
 
     showContextualMenu(items)
@@ -455,5 +406,47 @@ export class RepositoriesList extends React.Component<
 
   private onRemoveRepositoryAlias = (repository: Repository) => {
     this.props.dispatcher.changeRepositoryAlias(repository, null)
+  }
+
+  private onSetRepositoryFavoriteGroup = (
+    repository: Repository,
+    favoriteGroupId: number | null
+  ) => {
+    this.props.dispatcher.setRepositoryFavoriteGroup(
+      repository,
+      favoriteGroupId
+    )
+  }
+
+  private onCreateFavoriteGroupForRepository = (repository: Repository) => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.NewFavoriteGroup,
+      repository,
+    })
+  }
+
+  private onManageFavorite = (repository: Repository) => {
+    const { favoriteGroups } = this.props
+    const config = {
+      showCheckboxes: repository.isFavorite,
+      onSetRepositoryFavoriteGroup: this.onSetRepositoryFavoriteGroup,
+      onCreateFavoriteGroupForRepository:
+        this.onCreateFavoriteGroupForRepository,
+    }
+    const items: Array<IMenuItem> = buildFavoriteAssignmentItems(
+      repository,
+      favoriteGroups,
+      config
+    )
+
+    if (repository.isFavorite) {
+      items.push({ type: 'separator' })
+      items.push({
+        label: __DARWIN__ ? 'Remove from Favorites' : 'Remove from favorites',
+        action: () => this.onSetRepositoryFavoriteGroup(repository, null),
+      })
+    }
+
+    showContextualMenu(items)
   }
 }

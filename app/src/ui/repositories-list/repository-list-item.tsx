@@ -27,6 +27,26 @@ interface IRepositoryListItemProps {
 
   /** Number of uncommitted changes */
   readonly changedFilesCount: number
+
+  /**
+   * Called when the user clicks the favorite star on this row. The host is
+   * expected to open a small picker (group list + "New group…") or remove the
+   * repo from its current group.
+   */
+  readonly onManageFavorite: (repository: Repository) => void
+}
+
+function aheadBehindEqual(
+  a: IAheadBehind | null,
+  b: IAheadBehind | null
+): boolean {
+  if (a === b) {
+    return true
+  }
+  if (a === null || b === null) {
+    return false
+  }
+  return a.ahead === b.ahead && a.behind === b.behind
 }
 
 /** A repository item. */
@@ -81,8 +101,41 @@ export class RepositoryListItem extends React.Component<
             aheadBehind: this.props.aheadBehind,
             hasChanges: hasChanges,
           })}
+
+        {repository instanceof Repository && this.renderFavoriteToggle()}
       </div>
     )
+  }
+
+  private renderFavoriteToggle() {
+    const repo = this.props.repository
+    if (!(repo instanceof Repository)) {
+      return null
+    }
+    const { isFavorite } = repo
+    const label = isFavorite ? 'Manage favorite' : 'Add to favorites'
+    return (
+      <button
+        type="button"
+        className={classNames('favorite-toggle', { active: isFavorite })}
+        onClick={this.onFavoriteToggleClick}
+        aria-label={label}
+        aria-pressed={isFavorite}
+      >
+        <Octicon symbol={isFavorite ? octicons.starFill : octicons.star} />
+      </button>
+    )
+  }
+
+  private onFavoriteToggleClick = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation()
+    event.preventDefault()
+    const repo = this.props.repository
+    if (repo instanceof Repository) {
+      this.props.onManageFavorite(repo)
+    }
   }
 
   private renderTooltip() {
@@ -109,7 +162,11 @@ export class RepositoryListItem extends React.Component<
     ) {
       return (
         nextProps.repository.id !== this.props.repository.id ||
-        nextProps.matches !== this.props.matches
+        nextProps.repository.favoriteGroupId !==
+          this.props.repository.favoriteGroupId ||
+        nextProps.matches !== this.props.matches ||
+        nextProps.changedFilesCount !== this.props.changedFilesCount ||
+        !aheadBehindEqual(nextProps.aheadBehind, this.props.aheadBehind)
       )
     } else {
       return true
@@ -117,7 +174,7 @@ export class RepositoryListItem extends React.Component<
   }
 }
 
-const renderRepoIndicators: React.FunctionComponent<{
+export const renderRepoIndicators: React.FunctionComponent<{
   aheadBehind: IAheadBehind | null
   hasChanges: boolean
 }> = props => {
@@ -129,19 +186,92 @@ const renderRepoIndicators: React.FunctionComponent<{
   )
 }
 
-const renderAheadBehindIndicator = (aheadBehind: IAheadBehind) => {
-  const { ahead, behind } = aheadBehind
-  if (ahead === 0 && behind === 0) {
+/** Build the multi-line ahead/behind sentence used in row tooltips. */
+export function getAheadBehindTooltip(
+  aheadBehind: IAheadBehind | null
+): string | null {
+  if (aheadBehind === null) {
     return null
   }
-
-  const aheadBehindTooltip =
+  const { ahead, behind } = aheadBehind
+  if (behind === 0 && ahead === 0) {
+    return null
+  }
+  return (
     'The currently checked out branch is' +
     (behind ? ` ${commitGrammar(behind)} behind ` : '') +
     (behind && ahead ? 'and' : '') +
     (ahead ? ` ${commitGrammar(ahead)} ahead of ` : '') +
     'its tracked branch.'
+  )
+}
 
+interface IRepositoryRowFocusTooltipProps {
+  readonly repository: Repositoryish
+  readonly aheadBehind: IAheadBehind | null
+  readonly changedFilesCount: number
+}
+
+/**
+ * The rich row-focus tooltip used by the Current Repository dropdown rows.
+ * Re-exported so the favorites sidebar can render an identical popup.
+ */
+export function renderRepositoryRowFocusTooltip(
+  props: IRepositoryRowFocusTooltipProps
+): JSX.Element {
+  const { repository, aheadBehind, changedFilesCount } = props
+  const gitHubRepo =
+    repository instanceof Repository ? repository.gitHubRepository : null
+  const alias = repository instanceof Repository ? repository.alias : null
+  const realName = gitHubRepo ? gitHubRepo.fullName : repository.name
+  const aheadBehindTooltip = getAheadBehindTooltip(aheadBehind)
+  const hasChanges = changedFilesCount > 0
+  const ahead = aheadBehind?.ahead ?? 0
+  const behind = aheadBehind?.behind ?? 0
+
+  return (
+    <div className="repository-list-item-tooltip list-item-tooltip">
+      <div>
+        <div className="label">Full Name: </div>
+        {realName}
+        {alias && <> ({alias})</>}
+      </div>
+      <div>
+        <div className="label">Path: </div>
+        {repository.path}
+      </div>
+      {aheadBehindTooltip && (
+        <div>
+          <div className="label">
+            <div className="ahead-behind">
+              {ahead > 0 && <Octicon symbol={octicons.arrowUp} />}
+              {behind > 0 && <Octicon symbol={octicons.arrowDown} />}
+            </div>
+          </div>
+          {aheadBehindTooltip}
+        </div>
+      )}
+      {hasChanges && (
+        <div>
+          <div className="label">
+            <span className="change-indicator-wrapper">
+              <Octicon symbol={octicons.dotFill} />
+            </span>
+          </div>
+          There are uncommitted changes in this repository.
+        </div>
+      )}
+    </div>
+  )
+}
+
+const renderAheadBehindIndicator = (aheadBehind: IAheadBehind) => {
+  const aheadBehindTooltip = getAheadBehindTooltip(aheadBehind)
+  if (aheadBehindTooltip === null) {
+    return null
+  }
+
+  const { ahead, behind } = aheadBehind
   return (
     <TooltippedContent
       className="ahead-behind"
