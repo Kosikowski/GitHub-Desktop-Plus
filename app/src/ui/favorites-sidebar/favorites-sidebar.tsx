@@ -15,6 +15,7 @@ import {
 } from '../repositories-list/repository-list-item'
 import { Tooltip } from '../lib/tooltip'
 import { createObservableRef } from '../lib/observable-ref'
+import { enableAccessibleListToolTips } from '../../lib/feature-flag'
 
 const favoritesPanelId = 'favorites-sidebar-panel'
 const favoritesTabId = (groupId: number) => `favorites-sidebar-tab-${groupId}`
@@ -39,6 +40,7 @@ class FavoritesSidebarItem extends React.Component<
       this.props
     const label = repository.alias ?? repository.name
     const hasChanges = changedFilesCount > 0
+    const accessibleTooltips = enableAccessibleListToolTips()
 
     return (
       <li
@@ -48,13 +50,27 @@ class FavoritesSidebarItem extends React.Component<
         })}
         onContextMenu={this.onContextMenu}
       >
-        <Tooltip target={this.itemRef}>
-          {renderRepositoryRowFocusTooltip({
-            repository,
-            aheadBehind,
-            changedFilesCount,
-          })}
-        </Tooltip>
+        {accessibleTooltips ? (
+          <Tooltip
+            target={this.itemRef}
+            openOnFocus={true}
+            positionRelativeToTarget={true}
+          >
+            {renderRepositoryRowFocusTooltip({
+              repository,
+              aheadBehind,
+              changedFilesCount,
+            })}
+          </Tooltip>
+        ) : (
+          <Tooltip target={this.itemRef}>
+            {renderRepositoryRowFocusTooltip({
+              repository,
+              aheadBehind,
+              changedFilesCount,
+            })}
+          </Tooltip>
+        )}
         <button
           type="button"
           className="favorites-sidebar-item-button"

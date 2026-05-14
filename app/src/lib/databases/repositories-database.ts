@@ -180,29 +180,50 @@ export function getFavoriteGroupNameKey(name: string): string {
  * Backfill `nameKey` for groups added at v10 (where the unique index lived on
  * `name`). Mirrors createOwnerKey: keep the first row per case-insensitive
  * key, drop later duplicates so the new `&nameKey` index doesn't reject the
- * upgrade.
+ * upgrade. Repositories that pointed at a dropped duplicate are remapped to
+ * the surviving group inside the same transaction so we never leave
+ * `favoriteGroupId` referencing a missing row.
  */
 async function createFavoriteGroupNameKey(tx: Transaction) {
   const table = tx.table<IDatabaseFavoriteGroup, number>('favoriteGroups')
+  const repositoriesTable = tx.table<IDatabaseRepository, number>(
+    'repositories'
+  )
   const all = await table.toArray()
 
   const seen = new Map<string, IDatabaseFavoriteGroup>()
   const toDelete = new Array<number>()
+  const idRemap = new Array<{ from: number; to: number }>()
 
   for (const group of all) {
     assertNonNullable(group.id, 'Missing favorite group id')
     const key = getFavoriteGroupNameKey(group.name)
-    if (seen.has(key)) {
+    const kept = seen.get(key)
+    if (kept !== undefined) {
+      assertNonNullable(kept.id, 'Missing kept favorite group id')
       log.warn(
         `createFavoriteGroupNameKey: dropping duplicate group ${group.id} (${group.name})`
       )
       toDelete.push(group.id)
+      idRemap.push({ from: group.id, to: kept.id })
     } else {
       seen.set(key, { ...group, nameKey: key })
     }
   }
 
   await table.bulkPut([...seen.values()])
+
+  for (const mapping of idRemap) {
+    const modified = await repositoriesTable
+      .where('favoriteGroupId')
+      .equals(mapping.from)
+      .modify({ favoriteGroupId: mapping.to })
+
+    log.info(
+      `createFavoriteGroupNameKey: ${modified} repositories remapped from group ${mapping.from} to ${mapping.to}`
+    )
+  }
+
   if (toDelete.length > 0) {
     await table.bulkDelete(toDelete)
   }

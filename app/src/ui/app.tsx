@@ -3047,10 +3047,17 @@ export class App extends React.Component<IAppProps, IAppState> {
     this.props.dispatcher.setFavoritesActiveGroupId(id)
   }
 
+  private getFavoriteRepositories = memoizeOne(
+    (
+      repositories: ReadonlyArray<Repository | CloningRepository>
+    ): ReadonlyArray<Repository> =>
+      repositories.filter(
+        (r): r is Repository => r instanceof Repository && r.isFavorite
+      )
+  )
+
   private renderFavoritesSidebar() {
-    const favorites = this.state.repositories.filter(
-      (r): r is Repository => r instanceof Repository && r.isFavorite
-    )
+    const favorites = this.getFavoriteRepositories(this.state.repositories)
     const selectedRepository = this.state.selectedState?.repository ?? null
     return (
       <FavoritesSidebar

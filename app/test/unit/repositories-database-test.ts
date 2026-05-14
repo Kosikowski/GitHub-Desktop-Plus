@@ -207,4 +207,40 @@ describe('RepositoriesDatabase', () => {
 
     await db.delete()
   })
+
+  it('remaps repositories pointing at dropped duplicates during the v10→v11 migration', async () => {
+    const dbName = 'TestRepositoriesDatabase'
+    let db = new RepositoriesDatabase(dbName, 10)
+    await db.delete()
+    await db.open()
+
+    const keptId = await db.favoriteGroups.add({ name: 'Work', sortOrder: 0 })
+    const droppedId = await db.favoriteGroups.add({
+      name: 'WORK',
+      sortOrder: 1,
+    })
+
+    const repoId = await db.repositories.add({
+      gitHubRepositoryID: null,
+      path: '/path/dup-member',
+      alias: null,
+      missing: false,
+      favoriteGroupId: droppedId,
+    })
+
+    db.close()
+
+    db = new RepositoriesDatabase(dbName, 11)
+    await db.open()
+
+    const migrated = await db.repositories.get(repoId)
+    assert(migrated !== undefined)
+    assert.equal(migrated.favoriteGroupId, keptId)
+
+    const groups = await db.favoriteGroups.toArray()
+    assert.equal(groups.length, 1)
+    assert.equal(groups[0].id, keptId)
+
+    await db.delete()
+  })
 })
