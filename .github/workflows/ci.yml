@@ -142,10 +142,10 @@ jobs:
         with:
           name: ${{matrix.friendlyName}}-${{matrix.arch}}
           path: |
-            dist/GitHub Desktop-${{matrix.arch}}.zip
-            dist/GitHubDesktop-*.nupkg
-            dist/GitHubDesktopSetup-${{matrix.arch}}.exe
-            dist/GitHubDesktopSetup-${{matrix.arch}}.msi
+            dist/GitHub Desktop +-${{matrix.arch}}.zip
+            dist/GitHubDesktopPlus-*.nupkg
+            dist/GitHubDesktopPlusSetup-${{matrix.arch}}.exe
+            dist/GitHubDesktopPlusSetup-${{matrix.arch}}.msi
             dist/bundle-size.json
           if-no-files-found: error
   e2e-smoke:
@@ -212,9 +212,9 @@ jobs:
       - name: Install app on macOS
         if: runner.os == 'macOS'
         run: |
-          rm -rf "/Applications/GitHub Desktop.app"
-          ditto "dist/GitHub Desktop-darwin-arm64/GitHub Desktop.app" "/Applications/GitHub Desktop.app"
-          echo "DESKTOP_E2E_APP_PATH=/Applications/GitHub Desktop.app/Contents/MacOS/GitHub Desktop" >> "$GITHUB_ENV"
+          rm -rf "/Applications/GitHub Desktop +.app"
+          ditto "dist/GitHub Desktop +-darwin-arm64/GitHub Desktop +.app" "/Applications/GitHub Desktop +.app"
+          echo "DESKTOP_E2E_APP_PATH=/Applications/GitHub Desktop +.app/Contents/MacOS/GitHub Desktop +" >> "$GITHUB_ENV"
       - name: Install app on Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -222,7 +222,7 @@ jobs:
           function Write-SquirrelLogs {
             $logPaths = @(
               "$env:LOCALAPPDATA\SquirrelSetup.log",
-              "$env:LOCALAPPDATA\GitHubDesktop\SquirrelSetup.log"
+              "$env:LOCALAPPDATA\GitHubDesktopPlus\SquirrelSetup.log"
             )
 
             foreach ($logPath in $logPaths) {
@@ -233,7 +233,7 @@ jobs:
             }
           }
 
-          $setupExe = "dist/GitHubDesktopSetup-${{ matrix.arch }}.exe"
+          $setupExe = "dist/GitHubDesktopPlusSetup-${{ matrix.arch }}.exe"
           $installer = Start-Process -FilePath $setupExe -ArgumentList "/S" -PassThru
 
           try {
@@ -243,11 +243,11 @@ jobs:
             throw "Windows installer timed out after 300 seconds"
           }
 
-          Get-Process GitHubDesktop -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Process GitHubDesktopPlus -ErrorAction SilentlyContinue | Stop-Process -Force
 
           $installedExe = $null
           for ($attempt = 0; $attempt -lt 30 -and -not $installedExe; $attempt++) {
-            $installedExe = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop\app-*\GitHubDesktop.exe" -ErrorAction SilentlyContinue |
+            $installedExe = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktopPlus\app-*\GitHubDesktopPlus.exe" -ErrorAction SilentlyContinue |
               Sort-Object FullName -Descending |
               Select-Object -First 1 -ExpandProperty FullName
 
@@ -258,7 +258,7 @@ jobs:
 
           if (-not $installedExe) {
             Write-SquirrelLogs
-            throw "Unable to locate installed GitHub Desktop executable"
+            throw "Unable to locate installed GitHub Desktop + executable"
           }
 
           Add-Content -Path $env:GITHUB_ENV -Value "DESKTOP_E2E_APP_PATH=$installedExe"
