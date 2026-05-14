@@ -173,5 +173,9 @@ export function getChannelFromReleaseBranch(): string {
     return 'beta'
   }
 
+  if (getVersion().includes('plus')) {
+    return 'plus'
+  }
+
   return 'production'
 }

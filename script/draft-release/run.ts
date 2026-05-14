@@ -146,6 +146,11 @@ export async function run(args: ReadonlyArray<string>): Promise<void> {
       // we don't guess at release notes for test releases
       break
     }
+    case 'plus': {
+      // plus releases get an empty entry — the human fills in changelog.json
+      // on the release PR. Mirrors how the GitHub Actions workflow runs it.
+      break
+    }
     default: {
       assertNever(channel, 'missing channel type')
     }

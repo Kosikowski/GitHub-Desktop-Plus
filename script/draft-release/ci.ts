@@ -35,10 +35,12 @@ import { Channel } from './channel'
 const repoRoot = join(__dirname, '..', '..')
 
 function parseChannel(arg: string): Channel {
-  if (arg === 'production' || arg === 'beta') {
+  if (arg === 'production' || arg === 'beta' || arg === 'plus') {
     return arg
   }
-  throw new Error(`Invalid channel: ${arg}. Must be 'production' or 'beta'.`)
+  throw new Error(
+    `Invalid channel: ${arg}. Must be 'production', 'beta', or 'plus'.`
+  )
 }
 
 /**
@@ -63,8 +65,10 @@ function setOutput(pairs: Record<string, string>): void {
 
 async function commandVersion(channel: Channel): Promise<void> {
   const previous = await getLatestRelease({
-    excludeBetaReleases: channel === 'production',
+    excludeBetaReleases: channel === 'production' || channel === 'plus',
     excludeTestReleases: true,
+    excludePlusReleases: channel !== 'plus',
+    onlyPlusReleases: channel === 'plus',
   })
 
   const next = getNextVersionNumber(previous, channel)

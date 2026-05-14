@@ -1,1 +1,1 @@
-export type Channel = 'production' | 'beta' | 'test'
+export type Channel = 'production' | 'beta' | 'test' | 'plus'

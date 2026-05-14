@@ -59,4 +59,44 @@ describe('getNextVersionNumber', () => {
       })
     })
   })
+
+  describe('plus', () => {
+    const channel = 'plus'
+
+    describe('when a plus version is used', () => {
+      it('the plus tag is incremented', () => {
+        assert.equal(
+          getNextVersionNumber('1.1.2-plus.3', channel),
+          '1.1.2-plus.4'
+        )
+      })
+      it('handles multiple digits', () => {
+        assert.equal(
+          getNextVersionNumber('1.1.2-plus.99', channel),
+          '1.1.2-plus.100'
+        )
+      })
+    })
+
+    describe('when a production version is used', () => {
+      it('increments the patch and returns the first plus', () => {
+        assert.equal(getNextVersionNumber('1.0.1', channel), '1.0.2-plus.1')
+      })
+    })
+
+    describe("doesn't care for", () => {
+      it('beta versions', () => {
+        assert.throws(
+          () => getNextVersionNumber('1.0.1-beta1', channel),
+          /Unable to draft plus release using beta version '1\.0\.1-beta1'/
+        )
+      })
+      it('test versions', () => {
+        assert.throws(
+          () => getNextVersionNumber('1.0.1-test1', channel),
+          /Unable to draft plus release using test version '1\.0\.1-test1'/
+        )
+      })
+    })
+  })
 })
