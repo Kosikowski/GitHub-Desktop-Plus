@@ -1,5 +1,7 @@
 # GitHub Desktop +
 
+> [The story behind GitHub Desktop +](https://github.com/desktop/desktop/issues/22088)
+
 A fork of [GitHub Desktop](https://desktop.github.com/) that adds a
 **favourites sidebar** for one-click switching between the repositories you
 spend most of your time in, organised into named groups (e.g. Work, Personal,
