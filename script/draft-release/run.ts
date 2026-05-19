@@ -85,15 +85,18 @@ function printSteps(steps: ReadonlyArray<string>) {
 export async function run(args: ReadonlyArray<string>): Promise<void> {
   if (args.length === 0) {
     throw new Error(
-      `You have not specified a channel to draft this release for. Choose one of 'production' or 'beta'`
+      `You have not specified a channel to draft this release for. Choose one of 'production', 'beta', or 'plus'`
     )
   }
 
   const channel = parseChannel(args[0])
   const draftPretext = args[1] === '--pretext'
   const previousVersion = await getLatestRelease({
-    excludeBetaReleases: channel === 'production' || channel === 'test',
-    excludeTestReleases: channel === 'production' || channel === 'beta',
+    excludeBetaReleases:
+      channel === 'production' || channel === 'test' || channel === 'plus',
+    excludeTestReleases: channel !== 'test',
+    excludePlusReleases: channel !== 'plus',
+    onlyPlusReleases: channel === 'plus',
   })
   const nextVersion = getNextVersionNumber(previousVersion, channel)
 
