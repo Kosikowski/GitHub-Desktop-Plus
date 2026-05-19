@@ -33,6 +33,14 @@ One Windows caveat: custom URL protocols (`x-github-client://` etc.) are
 registered system-wide on a last-writer-wins basis, so if both apps are
 installed, whichever you ran most recently catches GitHub sign-in deep links.
 
+## Staying current with upstream
+
+This fork tracks [desktop/desktop](https://github.com/desktop/desktop) stable
+releases. A scheduled workflow runs every Monday and opens a draft pull
+request whenever upstream ships a new non-prerelease, so the fork-specific
+changes (favourites sidebar, rebrand) sit on top of the latest official
+release rather than drifting behind.
+
 ## Building from source
 
 ### Prerequisites

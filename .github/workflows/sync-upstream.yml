@@ -1,0 +1,188 @@
+name: 'Sync from upstream'
+
+on:
+  schedule:
+    # Mondays 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-upstream:
+    name: Sync from upstream
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout development
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: development
+
+      - name: Discover latest upstream non-prerelease
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list \
+            --repo desktop/desktop \
+            --limit 30 \
+            --json tagName,isPrerelease,isDraft \
+            --jq 'map(select(.isPrerelease == false and .isDraft == false)) | .[0].tagName')
+
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::Could not find a latest non-prerelease release on desktop/desktop"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "branch=sync/upstream-$TAG" >> "$GITHUB_OUTPUT"
+          echo "📦 Latest upstream non-prerelease: $TAG"
+
+      - name: Skip if sync branch already exists
+        id: branch-check
+        env:
+          BRANCH: ${{ steps.upstream.outputs.branch }}
+        run: |
+          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH$"; then
+            echo "Branch $BRANCH already exists on origin — nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch upstream tag
+        if: steps.branch-check.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          git remote add upstream https://github.com/desktop/desktop.git
+          git fetch --no-tags upstream "refs/tags/$TAG:refs/tags/upstream-$TAG"
+
+      - name: Skip if tag is already in development
+        if: steps.branch-check.outputs.skip == 'false'
+        id: ancestor-check
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          if git merge-base --is-ancestor "refs/tags/upstream-$TAG" HEAD; then
+            echo "Tag $TAG is already in development — nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Try merge into a new sync branch
+        if: |
+          steps.branch-check.outputs.skip == 'false' &&
+          steps.ancestor-check.outputs.skip == 'false'
+        id: merge
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+          BRANCH: ${{ steps.upstream.outputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+          if git merge --no-edit "refs/tags/upstream-$TAG"; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "conflicts<<EOF"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            git merge --abort
+            # Empty commit so the PR can be opened against development.
+            # The human resolves the merge locally and pushes the real
+            # merge commit on top.
+            git commit --allow-empty -m "Sync from upstream $TAG (resolve conflicts locally)"
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "conflicts<<EOF"
+              echo "$CONFLICTS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+          git push origin "$BRANCH"
+
+      - name: Open draft pull request
+        if: |
+          steps.branch-check.outputs.skip == 'false' &&
+          steps.ancestor-check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.upstream.outputs.tag }}
+          BRANCH: ${{ steps.upstream.outputs.branch }}
+          CLEAN: ${{ steps.merge.outputs.clean }}
+          CONFLICTS: ${{ steps.merge.outputs.conflicts }}
+        run: |
+          if [ "$CLEAN" = "true" ]; then
+            BODY=$(cat <<MARKDOWN
+          Merges upstream tag \`$TAG\` from \`desktop/desktop\` into \`development\`.
+
+          Merged cleanly — review the diff and mark ready.
+          MARKDOWN
+          )
+          else
+            BODY=$(cat <<MARKDOWN
+          Upstream tag \`$TAG\` from \`desktop/desktop\` does **not** merge cleanly into \`development\`.
+
+          This branch contains an empty placeholder commit so the PR can be opened. To resolve:
+
+          \`\`\`bash
+          git fetch origin $BRANCH
+          git checkout $BRANCH
+          git reset --hard origin/development
+          git remote add upstream https://github.com/desktop/desktop.git 2>/dev/null || true
+          git fetch upstream tag $TAG
+          git merge $TAG
+          # resolve conflicts, commit, then:
+          git push --force-with-lease origin $BRANCH
+          \`\`\`
+
+          Conflicting files:
+
+          \`\`\`
+          $CONFLICTS
+          \`\`\`
+          MARKDOWN
+          )
+          fi
+
+          gh pr create \
+            --base development \
+            --head "$BRANCH" \
+            --title "Sync from upstream $TAG" \
+            --body "$BODY" \
+            --draft
+
+      - name: Summary
+        if: always()
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+          BRANCH: ${{ steps.upstream.outputs.branch }}
+          BRANCH_SKIP: ${{ steps.branch-check.outputs.skip }}
+          ANCESTOR_SKIP: ${{ steps.ancestor-check.outputs.skip }}
+          CLEAN: ${{ steps.merge.outputs.clean }}
+        run: |
+          {
+            echo "## Upstream sync"
+            echo ""
+            echo "- Upstream tag: \`$TAG\`"
+            echo "- Sync branch: \`$BRANCH\`"
+            if [ "$BRANCH_SKIP" = "true" ]; then
+              echo "- Result: branch already exists on origin (no-op)"
+            elif [ "$ANCESTOR_SKIP" = "true" ]; then
+              echo "- Result: tag already merged into development (no-op)"
+            elif [ "$CLEAN" = "true" ]; then
+              echo "- Result: opened draft PR with a clean merge"
+            else
+              echo "- Result: opened draft PR with conflicts — resolve locally"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
