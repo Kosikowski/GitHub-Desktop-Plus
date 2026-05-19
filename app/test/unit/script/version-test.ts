@@ -110,17 +110,11 @@ describe('getNextPlusVersion', () => {
   })
 
   it('increments N when the previous plus matches upstream stable', () => {
-    assert.equal(
-      getNextPlusVersion('3.5.8-plus.2', '3.5.8'),
-      '3.5.8-plus.3'
-    )
+    assert.equal(getNextPlusVersion('3.5.8-plus.2', '3.5.8'), '3.5.8-plus.3')
   })
 
   it('resets to -plus.1 when upstream advances past the previous plus base', () => {
-    assert.equal(
-      getNextPlusVersion('3.5.7-plus.4', '3.5.8'),
-      '3.5.8-plus.1'
-    )
+    assert.equal(getNextPlusVersion('3.5.7-plus.4', '3.5.8'), '3.5.8-plus.1')
   })
 
   it('refuses when the previous plus is anchored ahead of upstream stable', () => {
@@ -145,9 +139,6 @@ describe('getNextPlusVersion', () => {
   })
 
   it('handles multi-digit plus numbers', () => {
-    assert.equal(
-      getNextPlusVersion('3.5.8-plus.99', '3.5.8'),
-      '3.5.8-plus.100'
-    )
+    assert.equal(getNextPlusVersion('3.5.8-plus.99', '3.5.8'), '3.5.8-plus.100')
   })
 })
