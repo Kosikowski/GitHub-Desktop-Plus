@@ -11,15 +11,25 @@ import { sh } from '../sh'
  *
  * @param options.excludeBetaReleases - when true, filters out beta release tags
  * @param options.excludeTestReleases - when true, filters out test release tags
+ * @param options.excludePlusReleases - when true, filters out plus release tags
  * @param options.onlyBetaReleases - when true, returns only beta release tags
+ * @param options.onlyPlusReleases - when true, returns only plus release tags
  */
 export async function getLatestRelease(options: {
   excludeBetaReleases: boolean
   excludeTestReleases: boolean
+  excludePlusReleases?: boolean
   onlyBetaReleases?: boolean
+  onlyPlusReleases?: boolean
 }): Promise<string> {
   if (options.excludeBetaReleases && options.onlyBetaReleases) {
     throw new Error('Cannot set both excludeBetaReleases and onlyBetaReleases')
+  }
+  if (options.excludePlusReleases && options.onlyPlusReleases) {
+    throw new Error('Cannot set both excludePlusReleases and onlyPlusReleases')
+  }
+  if (options.onlyBetaReleases && options.onlyPlusReleases) {
+    throw new Error('Cannot set both onlyBetaReleases and onlyPlusReleases')
   }
 
   let releaseTags = (await sh('git', 'tag'))
@@ -35,6 +45,12 @@ export async function getLatestRelease(options: {
 
   if (options.excludeTestReleases) {
     releaseTags = releaseTags.filter(tag => !tag.includes('-test'))
+  }
+
+  if (options.onlyPlusReleases) {
+    releaseTags = releaseTags.filter(tag => tag.includes('-plus.'))
+  } else if (options.excludePlusReleases) {
+    releaseTags = releaseTags.filter(tag => !tag.includes('-plus.'))
   }
 
   const releaseVersions = releaseTags.map(tag => tag.substring(8))

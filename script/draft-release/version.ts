@@ -3,11 +3,15 @@ import { inc, parse, SemVer } from 'semver'
 import { Channel } from './channel'
 
 function isBetaTag(version: SemVer) {
-  return version.prerelease.some(p => p.startsWith('beta'))
+  return version.prerelease.some(
+    p => typeof p === 'string' && p.startsWith('beta')
+  )
 }
 
 function isTestTag(version: SemVer) {
-  return version.prerelease.some(p => p.startsWith('test'))
+  return version.prerelease.some(
+    p => typeof p === 'string' && p.startsWith('test')
+  )
 }
 
 function tryGetBetaNumber(version: SemVer): number | null {
@@ -18,6 +22,17 @@ function tryGetBetaNumber(version: SemVer): number | null {
     return isNaN(betaNumber) ? null : betaNumber
   }
 
+  return null
+}
+
+function isPlusTag(version: SemVer) {
+  return version.prerelease[0] === 'plus'
+}
+
+function tryGetPlusNumber(version: SemVer): number | null {
+  if (isPlusTag(version) && typeof version.prerelease[1] === 'number') {
+    return version.prerelease[1]
+  }
   return null
 }
 
@@ -92,6 +107,29 @@ export function getNextVersionNumber(
         const nextVersion = inc(semanticVersion, 'patch')
         const firstTest = `${nextVersion}-test1`
         return firstTest
+      }
+    case 'plus':
+      if (isBetaTag(semanticVersion)) {
+        throw new Error(
+          `Unable to draft plus release using beta version '${version}'`
+        )
+      }
+
+      if (isTestTag(semanticVersion)) {
+        throw new Error(
+          `Unable to draft plus release using test version '${version}'`
+        )
+      }
+
+      const plusNumber = tryGetPlusNumber(semanticVersion)
+      if (plusNumber !== null) {
+        return semanticVersion.version.replace(
+          `-plus.${plusNumber}`,
+          `-plus.${plusNumber + 1}`
+        )
+      } else {
+        const nextVersion = inc(semanticVersion, 'patch')
+        return `${nextVersion}-plus.1`
       }
     default:
       throw new Error(
