@@ -64,3 +64,40 @@ export async function getLatestRelease(options: {
 
   return String(latestTag)
 }
+
+/**
+ * Returns the latest non-prerelease, non-draft release tag on
+ * desktop/desktop with the leading `release-` prefix stripped
+ * (e.g. `'3.5.8'`).
+ *
+ * Uses the `gh` CLI; in CI the workflow's GITHUB_TOKEN authenticates it,
+ * locally the developer's `gh auth login` does.
+ */
+export async function getUpstreamLatestStable(): Promise<string> {
+  const json = await sh(
+    'gh',
+    'release',
+    'list',
+    '--repo',
+    'desktop/desktop',
+    '--limit',
+    '30',
+    '--json',
+    'tagName,isPrerelease,isDraft'
+  )
+
+  const releases: ReadonlyArray<{
+    tagName: string
+    isPrerelease: boolean
+    isDraft: boolean
+  }> = JSON.parse(json)
+
+  const latest = releases.find(r => !r.isPrerelease && !r.isDraft)
+  if (latest == null) {
+    throw new Error(
+      'Could not find a latest non-prerelease release on desktop/desktop'
+    )
+  }
+
+  return latest.tagName.replace(/^release-/, '')
+}

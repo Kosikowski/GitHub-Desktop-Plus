@@ -5,7 +5,7 @@ import {
 } from '../changelog/parser'
 
 import { Channel } from './channel'
-import { getNextVersionNumber } from './version'
+import { getNextPlusVersion, getNextVersionNumber } from './version'
 import { execSync } from 'child_process'
 
 import { writeFileSync } from 'fs'
@@ -15,7 +15,7 @@ import { assertNever } from '../../app/src/lib/fatal-error'
 import { sh } from '../sh'
 import { readFile } from 'fs/promises'
 
-import { getLatestRelease } from './tags'
+import { getLatestRelease, getUpstreamLatestStable } from './tags'
 
 const changelogPath = join(__dirname, '..', '..', 'changelog.json')
 
@@ -35,7 +35,12 @@ async function createReleaseBranch(version: string): Promise<void> {
 
 /** Converts a string to Channel type if possible */
 function parseChannel(arg: string): Channel {
-  if (arg === 'production' || arg === 'beta' || arg === 'test') {
+  if (
+    arg === 'production' ||
+    arg === 'beta' ||
+    arg === 'test' ||
+    arg === 'plus'
+  ) {
     return arg
   }
 
@@ -91,14 +96,38 @@ export async function run(args: ReadonlyArray<string>): Promise<void> {
 
   const channel = parseChannel(args[0])
   const draftPretext = args[1] === '--pretext'
-  const previousVersion = await getLatestRelease({
-    excludeBetaReleases:
-      channel === 'production' || channel === 'test' || channel === 'plus',
-    excludeTestReleases: channel !== 'test',
-    excludePlusReleases: channel !== 'plus',
-    onlyPlusReleases: channel === 'plus',
-  })
-  const nextVersion = getNextVersionNumber(previousVersion, channel)
+
+  let previousVersion: string
+  let nextVersion: string
+
+  if (channel === 'plus') {
+    let previousPlus: string | null
+    try {
+      previousPlus = await getLatestRelease({
+        excludeBetaReleases: true,
+        excludeTestReleases: true,
+        onlyPlusReleases: true,
+      })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      if (message.includes('No matching release tags found')) {
+        previousPlus = null
+      } else {
+        throw e
+      }
+    }
+
+    const upstreamStable = await getUpstreamLatestStable()
+    nextVersion = getNextPlusVersion(previousPlus, upstreamStable)
+    previousVersion = previousPlus ?? upstreamStable
+  } else {
+    previousVersion = await getLatestRelease({
+      excludeBetaReleases: channel === 'production' || channel === 'test',
+      excludeTestReleases: channel !== 'test',
+      excludePlusReleases: true,
+    })
+    nextVersion = getNextVersionNumber(previousVersion, channel)
+  }
 
   console.log(`Creating release branch for "${nextVersion}"...`)
   createReleaseBranch(nextVersion)
