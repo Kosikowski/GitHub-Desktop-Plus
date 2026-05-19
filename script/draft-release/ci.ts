@@ -27,8 +27,8 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
-import { getLatestRelease } from './tags'
-import { getNextVersionNumber } from './version'
+import { getLatestRelease, getUpstreamLatestStable } from './tags'
+import { getNextPlusVersion, getNextVersionNumber } from './version'
 import { getChangelogEntriesSince } from '../changelog/parser'
 import { Channel } from './channel'
 
@@ -64,14 +64,42 @@ function setOutput(pairs: Record<string, string>): void {
 }
 
 async function commandVersion(channel: Channel): Promise<void> {
-  const previous = await getLatestRelease({
-    excludeBetaReleases: channel === 'production' || channel === 'plus',
-    excludeTestReleases: true,
-    excludePlusReleases: channel !== 'plus',
-    onlyPlusReleases: channel === 'plus',
-  })
+  let previous: string
+  let next: string
 
-  const next = getNextVersionNumber(previous, channel)
+  if (channel === 'plus') {
+    // Plus releases are anchored to upstream's latest stable: their
+    // X.Y.Z must match. The previous tag is informational only — it
+    // tells us the current plus number to increment.
+    let previousPlus: string | null
+    try {
+      previousPlus = await getLatestRelease({
+        excludeBetaReleases: true,
+        excludeTestReleases: true,
+        onlyPlusReleases: true,
+      })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      if (message.includes('No matching release tags found')) {
+        previousPlus = null
+      } else {
+        throw e
+      }
+    }
+
+    const upstreamStable = await getUpstreamLatestStable()
+    next = getNextPlusVersion(previousPlus, upstreamStable)
+    previous = previousPlus ?? upstreamStable
+
+    console.log(`📌 Upstream stable: ${upstreamStable}`)
+  } else {
+    previous = await getLatestRelease({
+      excludeBetaReleases: channel === 'production',
+      excludeTestReleases: true,
+      excludePlusReleases: true,
+    })
+    next = getNextVersionNumber(previous, channel)
+  }
 
   const outputs: Record<string, string> = {
     previous,

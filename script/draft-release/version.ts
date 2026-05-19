@@ -1,4 +1,4 @@
-import { inc, parse, SemVer } from 'semver'
+import { compare, inc, parse, SemVer } from 'semver'
 
 import { Channel } from './channel'
 
@@ -136,4 +136,69 @@ export function getNextVersionNumber(
         `Resolving the next version is not implemented for channel ${channel}`
       )
   }
+}
+
+/**
+ * Computes the next plus release version under the policy that plus
+ * releases are always cut from upstream stable and share its X.Y.Z.
+ *
+ * - No previous plus tag → `${upstreamStable}-plus.1`
+ * - Previous plus base < upstream stable → `${upstreamStable}-plus.1`
+ * - Previous plus base == upstream stable → bump N
+ * - Previous plus base > upstream stable → throw (a plus tag exists for
+ *   a version upstream hasn't shipped as stable yet; wait for upstream)
+ */
+export function getNextPlusVersion(
+  previousPlus: string | null,
+  upstreamStable: string
+): string {
+  const upstreamSv = parse(upstreamStable)
+  if (upstreamSv == null) {
+    throw new Error(
+      `Unable to parse upstream stable version '${upstreamStable}'`
+    )
+  }
+  if (upstreamSv.prerelease.length > 0) {
+    throw new Error(
+      `Upstream stable must not be a prerelease: '${upstreamStable}'`
+    )
+  }
+
+  if (previousPlus == null) {
+    return `${upstreamStable}-plus.1`
+  }
+
+  const previousSv = parse(previousPlus)
+  if (previousSv == null) {
+    throw new Error(`Unable to parse previous plus version '${previousPlus}'`)
+  }
+  if (!isPlusTag(previousSv)) {
+    throw new Error(
+      `Previous version '${previousPlus}' is not a plus release tag`
+    )
+  }
+
+  const previousBase = `${previousSv.major}.${previousSv.minor}.${previousSv.patch}`
+  const cmp = compare(previousBase, upstreamStable)
+
+  if (cmp < 0) {
+    return `${upstreamStable}-plus.1`
+  }
+
+  if (cmp === 0) {
+    const n = tryGetPlusNumber(previousSv)
+    if (n == null) {
+      throw new Error(
+        `Unable to read plus number from previous version '${previousPlus}'`
+      )
+    }
+    return `${upstreamStable}-plus.${n + 1}`
+  }
+
+  throw new Error(
+    `Cannot draft a plus release: latest plus tag '${previousPlus}' is ` +
+      `anchored on ${previousBase}, which is ahead of the latest upstream ` +
+      `stable ${upstreamStable}. Wait for desktop/desktop to release ` +
+      `${previousBase} (or newer) as stable.`
+  )
 }

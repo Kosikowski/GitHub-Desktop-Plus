@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { getNextVersionNumber } from '../../../../script/draft-release/version'
+import {
+  getNextPlusVersion,
+  getNextVersionNumber,
+} from '../../../../script/draft-release/version'
 
 describe('getNextVersionNumber', () => {
   describe('production', () => {
@@ -98,5 +101,44 @@ describe('getNextVersionNumber', () => {
         )
       })
     })
+  })
+})
+
+describe('getNextPlusVersion', () => {
+  it('starts at -plus.1 when there is no previous plus tag', () => {
+    assert.equal(getNextPlusVersion(null, '3.5.8'), '3.5.8-plus.1')
+  })
+
+  it('increments N when the previous plus matches upstream stable', () => {
+    assert.equal(getNextPlusVersion('3.5.8-plus.2', '3.5.8'), '3.5.8-plus.3')
+  })
+
+  it('resets to -plus.1 when upstream advances past the previous plus base', () => {
+    assert.equal(getNextPlusVersion('3.5.7-plus.4', '3.5.8'), '3.5.8-plus.1')
+  })
+
+  it('refuses when the previous plus is anchored ahead of upstream stable', () => {
+    assert.throws(
+      () => getNextPlusVersion('3.5.9-plus.1', '3.5.8'),
+      /anchored on 3\.5\.9.*ahead of the latest upstream stable 3\.5\.8/
+    )
+  })
+
+  it('rejects an upstream stable that is itself a prerelease', () => {
+    assert.throws(
+      () => getNextPlusVersion(null, '3.5.9-beta1'),
+      /must not be a prerelease/
+    )
+  })
+
+  it('rejects a previous version that is not a plus tag', () => {
+    assert.throws(
+      () => getNextPlusVersion('3.5.8-beta1', '3.5.8'),
+      /not a plus release tag/
+    )
+  })
+
+  it('handles multi-digit plus numbers', () => {
+    assert.equal(getNextPlusVersion('3.5.8-plus.99', '3.5.8'), '3.5.8-plus.100')
   })
 })
