@@ -45,17 +45,37 @@ jobs:
       - name: Skip if sync branch already exists
         id: branch-check
         env:
+          GH_TOKEN: ${{ github.token }}
+          # In a fork, gh resolves the parent repo (desktop/desktop) as the
+          # default base — pin it to this repo.
+          GH_REPO: ${{ github.repository }}
           BRANCH: ${{ steps.upstream.outputs.branch }}
         run: |
           if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH$"; then
-            echo "Branch $BRANCH already exists on origin — nothing to do."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            # A previous run may have pushed the branch and then died before
+            # opening the PR (e.g. "Allow GitHub Actions to create and approve
+            # pull requests" disabled). Only treat the branch as done when a PR
+            # for it exists in any state — a deliberately closed PR must not be
+            # reopened every week.
+            PR_COUNT=$(gh pr list --head "$BRANCH" --state all --json number --jq 'length')
+            if [ "$PR_COUNT" -gt 0 ]; then
+              echo "Branch $BRANCH already exists with a PR — nothing to do."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "recover=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "Branch $BRANCH exists but has no PR — opening the missing PR."
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "recover=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "recover=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Fetch upstream tag
-        if: steps.branch-check.outputs.skip == 'false'
+        if: |
+          steps.branch-check.outputs.skip == 'false' &&
+          steps.branch-check.outputs.recover == 'false'
         env:
           TAG: ${{ steps.upstream.outputs.tag }}
         run: |
@@ -63,7 +83,9 @@ jobs:
           git fetch --no-tags upstream "refs/tags/$TAG:refs/tags/upstream-$TAG"
 
       - name: Skip if tag is already in development
-        if: steps.branch-check.outputs.skip == 'false'
+        if: |
+          steps.branch-check.outputs.skip == 'false' &&
+          steps.branch-check.outputs.recover == 'false'
         id: ancestor-check
         env:
           TAG: ${{ steps.upstream.outputs.tag }}
@@ -78,6 +100,7 @@ jobs:
       - name: Try merge into a new sync branch
         if: |
           steps.branch-check.outputs.skip == 'false' &&
+          steps.branch-check.outputs.recover == 'false' &&
           steps.ancestor-check.outputs.skip == 'false'
         id: merge
         env:
@@ -114,14 +137,32 @@ jobs:
       - name: Open draft pull request
         if: |
           steps.branch-check.outputs.skip == 'false' &&
-          steps.ancestor-check.outputs.skip == 'false'
+          (steps.branch-check.outputs.recover == 'true' ||
+           steps.ancestor-check.outputs.skip == 'false')
         env:
           GH_TOKEN: ${{ github.token }}
+          # Without this, gh pr create in a fork targets the parent repo
+          # (desktop/desktop) and fails with "Resource not accessible by
+          # integration" — the PR must open in this repo.
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.upstream.outputs.tag }}
           BRANCH: ${{ steps.upstream.outputs.branch }}
+          RECOVER: ${{ steps.branch-check.outputs.recover }}
           CLEAN: ${{ steps.merge.outputs.clean }}
           CONFLICTS: ${{ steps.merge.outputs.conflicts }}
         run: |
+          if [ "$RECOVER" = "true" ]; then
+            # The merge step didn't run this time, so infer the branch state:
+            # an empty diff against development means the branch only holds
+            # the conflict placeholder commit.
+            if git diff --quiet origin/development "origin/$BRANCH"; then
+              CLEAN=false
+              CONFLICTS="(run the merge locally to see the conflicting files)"
+            else
+              CLEAN=true
+            fi
+          fi
+
           if [ "$CLEAN" = "true" ]; then
             BODY=$(cat <<MARKDOWN
           Merges upstream tag \`$TAG\` from \`desktop/desktop\` into \`development\`.
@@ -168,6 +209,7 @@ jobs:
           TAG: ${{ steps.upstream.outputs.tag }}
           BRANCH: ${{ steps.upstream.outputs.branch }}
           BRANCH_SKIP: ${{ steps.branch-check.outputs.skip }}
+          RECOVER: ${{ steps.branch-check.outputs.recover }}
           ANCESTOR_SKIP: ${{ steps.ancestor-check.outputs.skip }}
           CLEAN: ${{ steps.merge.outputs.clean }}
         run: |
@@ -177,7 +219,9 @@ jobs:
             echo "- Upstream tag: \`$TAG\`"
             echo "- Sync branch: \`$BRANCH\`"
             if [ "$BRANCH_SKIP" = "true" ]; then
-              echo "- Result: branch already exists on origin (no-op)"
+              echo "- Result: branch already exists with a PR (no-op)"
+            elif [ "$RECOVER" = "true" ]; then
+              echo "- Result: branch existed without a PR — opened the missing draft PR"
             elif [ "$ANCESTOR_SKIP" = "true" ]; then
               echo "- Result: tag already merged into development (no-op)"
             elif [ "$CLEAN" = "true" ]; then

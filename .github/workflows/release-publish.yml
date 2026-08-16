@@ -1,0 +1,175 @@
+name: 'Publish Release'
+
+# Fires when a Draft Release PR (branch `releases/<version>`) is merged into
+# `development`. Builds all four platform artifacts via the shared ci.yml,
+# tags the merge commit `release-<version>`, and creates a GitHub Release
+# with the changelog.json entry as release notes.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [development]
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect release branch
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'releases/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      tag: ${{ steps.parse.outputs.tag }}
+      prerelease: ${{ steps.parse.outputs.prerelease }}
+      sha: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Parse version from branch name
+        id: parse
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          VERSION="${BRANCH#releases/}"
+
+          # Beta and test releases are GitHub prereleases; plus and bare
+          # production releases are not. update.electronjs.org only serves
+          # non-prerelease releases.
+          if [[ "$VERSION" == *-beta* || "$VERSION" == *-test* ]]; then
+            PRERELEASE=true
+          else
+            PRERELEASE=false
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "tag=release-$VERSION"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "📦 Releasing $VERSION (prerelease=$PRERELEASE)"
+
+  build:
+    name: Build
+    needs: detect
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      repository: ${{ github.repository }}
+      ref: ${{ needs.detect.outputs.sha }}
+      upload-artifacts: true
+      environment: release
+      sign: false
+    secrets: inherit
+
+  publish:
+    name: Tag and publish GitHub Release
+    needs: [detect, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect.outputs.sha }}
+
+      - name: Tag the merge commit
+        env:
+          TAG: ${{ needs.detect.outputs.tag }}
+          SHA: ${{ needs.detect.outputs.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "::error::Tag $TAG already exists on origin. Refusing to overwrite."
+            exit 1
+          fi
+
+          git tag "$TAG" "$SHA"
+          git push origin "$TAG"
+          echo "✅ Pushed tag $TAG → $SHA"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract release notes from changelog.json
+        id: notes
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          # changelog.json has the shape { "releases": { "<version>": [ "entry", ... ] } }
+          NOTES=$(jq -r --arg v "$VERSION" '
+            if .releases[$v] == null then
+              "_No changelog entry found for \($v) — fill in changelog.json before the next release._"
+            elif (.releases[$v] | length) == 0 then
+              "_No changelog entries for this release._"
+            else
+              .releases[$v] | map("- " + .) | join("\n")
+            end
+          ' changelog.json)
+
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.detect.outputs.tag }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          PRERELEASE: ${{ needs.detect.outputs.prerelease }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
+          PRERELEASE_FLAG=""
+          LATEST_FLAG="--latest"
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+            LATEST_FLAG=""
+          fi
+
+          # Flatten the per-job artifact directories produced by
+          # actions/download-artifact@v4 into a flat asset list.
+          ASSETS=$(find artifacts -type f \
+            \( -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.nupkg' \))
+
+          if [ -z "$ASSETS" ]; then
+            echo "::error::No build artifacts found to attach to the release"
+            exit 1
+          fi
+
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "GitHub Desktop + $VERSION" \
+            --notes "$NOTES" \
+            $PRERELEASE_FLAG $LATEST_FLAG \
+            $ASSETS
+
+          echo "✅ Published release $TAG"
+
+      - name: Summary
+        if: always()
+        env:
+          TAG: ${{ needs.detect.outputs.tag }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          PRERELEASE: ${{ needs.detect.outputs.prerelease }}
+        run: |
+          {
+            echo "## Release published"
+            echo ""
+            echo "- Tag: \`$TAG\`"
+            echo "- Version: \`$VERSION\`"
+            echo "- Prerelease: \`$PRERELEASE\`"
+            echo ""
+            echo "[View release](https://github.com/${{ github.repository }}/releases/tag/$TAG)"
+          } >> "$GITHUB_STEP_SUMMARY"

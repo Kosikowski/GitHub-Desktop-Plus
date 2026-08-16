@@ -74,6 +74,10 @@ jobs:
         if: ${{ inputs.dry-run == false }}
         env:
           GH_TOKEN: ${{ github.token }}
+          # In a fork, gh pr create targets the parent repo (desktop/desktop)
+          # by default and fails with "Resource not accessible by
+          # integration" — pin it to this repo.
+          GH_REPO: ${{ github.repository }}
           CHANNEL: ${{ inputs.channel }}
           NEXT_VERSION: ${{ steps.version.outputs.next }}
           REF_OVERRIDE: ${{ inputs.ref }}
