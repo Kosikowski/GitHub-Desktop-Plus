@@ -1,5 +1,6 @@
-import { describe, it, beforeEach } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert'
+import { join } from 'path'
 import {
   FavoriteGroupCapError,
   FavoriteGroupNameTakenError,
@@ -21,10 +22,14 @@ describe('RepositoriesStore', () => {
     repositoriesStore = new RepositoriesStore(repoDb)
   })
 
+  afterEach(() => {
+    repoDb.close()
+  })
+
   describe('adding a new repository', () => {
     it('contains the added repository', async () => {
       const repoPath = '/some/cool/path'
-      await repositoriesStore.addRepository(repoPath)
+      await repositoriesStore.addRepository(repoPath, join(repoPath, '.git'))
 
       const repositories = await repositoriesStore.getAll()
       assert.equal(repositories[0].path, repoPath)
@@ -33,8 +38,14 @@ describe('RepositoriesStore', () => {
 
   describe('getting all repositories', () => {
     it('returns multiple repositories', async () => {
-      await repositoriesStore.addRepository('/some/cool/path')
-      await repositoriesStore.addRepository('/some/other/path')
+      await repositoriesStore.addRepository(
+        '/some/cool/path',
+        '/some/cool/path/.git'
+      )
+      await repositoriesStore.addRepository(
+        '/some/other/path',
+        '/some/other/path/.git'
+      )
 
       const repositories = await repositoriesStore.getAll()
       assert.equal(repositories.length, 2)
@@ -71,7 +82,10 @@ describe('RepositoriesStore', () => {
 
     it('adds a new GitHub repository', async () => {
       await repositoriesStore.setGitHubRepository(
-        await repositoriesStore.addRepository('/some/cool/path'),
+        await repositoriesStore.addRepository(
+          '/some/cool/path',
+          '/some/cool/path/.git'
+        ),
         await repositoriesStore.upsertGitHubRepository(endpoint, apiRepo)
       )
 
@@ -88,12 +102,18 @@ describe('RepositoriesStore', () => {
 
     it('reuses an existing GitHub repository', async () => {
       const firstRepo = await repositoriesStore.setGitHubRepository(
-        await repositoriesStore.addRepository('/some/cool/path'),
+        await repositoriesStore.addRepository(
+          '/some/cool/path',
+          '/some/cool/path/.git'
+        ),
         await repositoriesStore.upsertGitHubRepository(endpoint, apiRepo)
       )
 
       const secondRepo = await repositoriesStore.setGitHubRepository(
-        await repositoriesStore.addRepository('/some/other/path'),
+        await repositoriesStore.addRepository(
+          '/some/other/path',
+          '/some/other/path/.git'
+        ),
         await repositoriesStore.upsertGitHubRepository(endpoint, apiRepo)
       )
 
@@ -106,7 +126,7 @@ describe('RepositoriesStore', () => {
 
   describe('favorites and groups', () => {
     it('defaults favoriteGroupId to null on new repositories', async () => {
-      const repo = await repositoriesStore.addRepository('/path/a')
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
       assert.equal(repo.favoriteGroupId, null)
       assert.equal(repo.isFavorite, false)
 
@@ -115,7 +135,7 @@ describe('RepositoriesStore', () => {
     })
 
     it('creates a group and assigns a repository to it', async () => {
-      const repo = await repositoriesStore.addRepository('/path/a')
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
       const group = await repositoriesStore.addFavoriteGroup('Work')
       assert.equal(group.name, 'Work')
 
@@ -131,7 +151,7 @@ describe('RepositoriesStore', () => {
     })
 
     it('removes membership when groupId is null', async () => {
-      const repo = await repositoriesStore.addRepository('/path/a')
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
       const group = await repositoriesStore.addFavoriteGroup('Work')
       await repositoriesStore.setRepositoryFavoriteGroup(repo, group.id)
       const cleared = await repositoriesStore.setRepositoryFavoriteGroup(
@@ -151,7 +171,7 @@ describe('RepositoriesStore', () => {
     })
 
     it('clears member memberships when a group is deleted', async () => {
-      const repo = await repositoriesStore.addRepository('/path/a')
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
       const group = await repositoriesStore.addFavoriteGroup('Work')
       await repositoriesStore.setRepositoryFavoriteGroup(repo, group.id)
 
@@ -177,7 +197,7 @@ describe('RepositoriesStore', () => {
     })
 
     it('moves a repository between groups', async () => {
-      const repo = await repositoriesStore.addRepository('/path/a')
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
       const work = await repositoriesStore.addFavoriteGroup('Work')
       const personal = await repositoriesStore.addFavoriteGroup('Personal')
 
@@ -231,7 +251,7 @@ describe('RepositoriesStore', () => {
     })
 
     it('rejects assigning a repository to a non-existent group', async () => {
-      const repo = await repositoriesStore.addRepository('/path/a')
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
       await assert.rejects(
         repositoriesStore.setRepositoryFavoriteGroup(repo, 9999),
         UnknownFavoriteGroupError

@@ -30,6 +30,7 @@ import {
   buildFavoriteAssignmentItems,
   generateRepositoryListContextMenu,
 } from '../repositories-list/repository-list-item-context-menu'
+import { enableWorktreeSupport } from '../../lib/feature-flag'
 import { SectionFilterList } from '../lib/section-filter-list'
 import { assertNever } from '../../lib/fatal-error'
 
@@ -247,6 +248,12 @@ export class RepositoriesList extends React.Component<
       onCreateFavoriteGroupForRepository:
         this.onCreateFavoriteGroupForRepository,
       onViewOnGitHub: this.props.onViewOnGitHub,
+      onCreateWorktree: enableWorktreeSupport()
+        ? this.onCreateWorktree
+        : undefined,
+      onShowWorktrees: enableWorktreeSupport()
+        ? this.onShowWorktrees
+        : undefined,
       repository: item.repository,
       shellLabel: this.props.shellLabel,
       favoriteGroups: this.props.favoriteGroups,
@@ -425,6 +432,13 @@ export class RepositoriesList extends React.Component<
     })
   }
 
+  private onCreateWorktree = (repository: Repository) => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddWorktree,
+      repository,
+    })
+  }
+
   private onManageFavorite = (repository: Repository) => {
     const { favoriteGroups } = this.props
     const config = {
@@ -448,5 +462,10 @@ export class RepositoriesList extends React.Component<
     }
 
     showContextualMenu(items)
+  }
+
+  private onShowWorktrees = (repository: Repository) => {
+    this.props.dispatcher.selectRepository(repository)
+    this.props.dispatcher.showWorktreesFoldout()
   }
 }
