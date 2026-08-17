@@ -80,7 +80,7 @@ yarn package        # writes the platform installer/zip under dist/
 
 Outputs:
 
-- **macOS**: `dist/GitHub Desktop +-<arch>.zip`
+- **macOS**: `dist/GitHubDesktopPlus-darwin-<arch>.zip`
 - **Windows**: `dist/installer/GitHubDesktopPlusSetup-<arch>.{msi,exe}`
 
 The macOS build is **unsigned**, so Gatekeeper will refuse it on first launch
