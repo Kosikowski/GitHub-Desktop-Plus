@@ -33,7 +33,10 @@ export function getExecutableName() {
 }
 
 export function getOSXZipName() {
-  return `${productName}-${getDistArchitecture()}.zip`
+  // update.electronjs.org only recognizes a macOS asset when the file name
+  // contains `mac`, `darwin` or `osx`, and it can't handle the spaces in the
+  // product name, so use the Windows-style identifier here too.
+  return `${getWindowsIdentifierName()}-darwin-${getDistArchitecture()}.zip`
 }
 
 export function getOSXZipPath() {

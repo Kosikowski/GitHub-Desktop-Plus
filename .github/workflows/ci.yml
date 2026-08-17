@@ -148,7 +148,7 @@ jobs:
         with:
           name: ${{matrix.friendlyName}}-${{matrix.arch}}
           path: |
-            dist/GitHub Desktop +-${{matrix.arch}}.zip
+            dist/GitHubDesktopPlus-darwin-${{matrix.arch}}.zip
             dist/GitHubDesktopPlus-*.nupkg
             dist/GitHubDesktopPlusSetup-${{matrix.arch}}.exe
             dist/GitHubDesktopPlusSetup-${{matrix.arch}}.msi
