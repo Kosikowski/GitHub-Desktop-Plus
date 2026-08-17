@@ -87,8 +87,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
-            echo "::error::Tag $TAG already exists on origin. Refusing to overwrite."
+          # Idempotent so a failed publish can be re-run: a tag that already
+          # points at the right commit is fine, anything else is an error.
+          EXISTING=$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)
+          if [ -n "$EXISTING" ]; then
+            if [ "$EXISTING" = "$SHA" ]; then
+              echo "Tag $TAG already points at $SHA — nothing to do."
+              exit 0
+            fi
+            echo "::error::Tag $TAG already exists and points at $EXISTING (expected $SHA). Refusing to overwrite."
             exit 1
           fi
 
@@ -139,21 +146,33 @@ jobs:
           fi
 
           # Flatten the per-job artifact directories produced by
-          # actions/download-artifact@v4 into a flat asset list.
-          ASSETS=$(find artifacts -type f \
+          # actions/download-artifact@v4 into a flat asset list. Use an
+          # array — asset file names contain spaces (the product name is
+          # "GitHub Desktop +"), so unquoted word-splitting breaks them.
+          mapfile -t ASSETS < <(find artifacts -type f \
             \( -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.nupkg' \))
 
-          if [ -z "$ASSETS" ]; then
+          if [ "${#ASSETS[@]}" -eq 0 ]; then
             echo "::error::No build artifacts found to attach to the release"
             exit 1
           fi
 
-          gh release create "$TAG" \
-            --repo "${{ github.repository }}" \
-            --title "GitHub Desktop + $VERSION" \
-            --notes "$NOTES" \
-            $PRERELEASE_FLAG $LATEST_FLAG \
-            $ASSETS
+          # Idempotent so a failed publish can be re-run: if the release
+          # already exists just (re-)upload the assets.
+          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release $TAG already exists — uploading assets to it."
+            gh release upload "$TAG" \
+              --repo "${{ github.repository }}" \
+              --clobber \
+              "${ASSETS[@]}"
+          else
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "GitHub Desktop + $VERSION" \
+              --notes "$NOTES" \
+              $PRERELEASE_FLAG $LATEST_FLAG \
+              "${ASSETS[@]}"
+          fi
 
           echo "✅ Published release $TAG"
 
