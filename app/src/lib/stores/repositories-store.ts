@@ -433,11 +433,11 @@ export class RepositoriesStore extends TypedBaseStore<
     const groups = await this.db.favoriteGroups.toArray()
 
     for (const group of groups) {
-      assertNonNullable(group.id, 'Missing favorite group id')
       if (
         group.lastSelectedRepositoryId === repositoryId &&
         group.id !== exceptGroupId
       ) {
+        assertNonNullable(group.id, 'Missing favorite group id')
         await this.db.favoriteGroups.update(group.id, {
           lastSelectedRepositoryId: null,
         })
