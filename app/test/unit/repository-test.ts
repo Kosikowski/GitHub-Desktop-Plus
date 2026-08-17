@@ -33,6 +33,7 @@ describe('Repository', () => {
         null,
         {},
         false,
+        undefined,
         7
       )
       assert.equal(repository.isFavorite, true)
@@ -48,10 +49,31 @@ describe('Repository', () => {
         null,
         {},
         false,
+        undefined,
         null
       )
-      const b = new Repository('/some/path', 1, null, false, null, {}, false, 1)
-      const c = new Repository('/some/path', 1, null, false, null, {}, false, 2)
+      const b = new Repository(
+        '/some/path',
+        1,
+        null,
+        false,
+        null,
+        {},
+        false,
+        undefined,
+        1
+      )
+      const c = new Repository(
+        '/some/path',
+        1,
+        null,
+        false,
+        null,
+        {},
+        false,
+        undefined,
+        2
+      )
       assert.notEqual(a.hash, b.hash)
       assert.notEqual(b.hash, c.hash)
       assert.notEqual(a.hash, c.hash)
@@ -67,6 +89,7 @@ describe('Repository', () => {
         null,
         {},
         false,
+        undefined,
         null
       )
       assert.equal(a.favoriteGroupId, null)

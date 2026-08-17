@@ -21,19 +21,9 @@ function getBaseName(path: string): string {
   return baseName
 }
 
-/** Base type for a directory you can run git commands successfully */
-export type WorkingTree = {
-  readonly path: string
-}
-
 /** A local repository. */
 export class Repository {
   public readonly name: string
-  /**
-   * The main working tree (what we commonly
-   * think of as the repository's working directory)
-   */
-  private readonly mainWorkTree: WorkingTree
 
   /**
    * A hash of the properties of the object.
@@ -47,7 +37,7 @@ export class Repository {
    * @param missing Was the repository missing on disk last we checked?
    */
   public constructor(
-    path: string,
+    public readonly path: string,
     public readonly id: number,
     public readonly gitHubRepository: GitHubRepository | null,
     public readonly missing: boolean,
@@ -60,12 +50,17 @@ export class Repository {
      */
     public readonly isTutorialRepository: boolean = false,
     /**
+     * The path to the .git directory for this repository, or undefined if it
+     * hasn't been resolved yet (e.g. for repositories added before this
+     * property was introduced).
+     */
+    public readonly gitDir: string | undefined = undefined,
+    /**
      * Identifier of the favorite group this repository belongs to, or null
      * if the repository is not in any favorites group.
      */
     public readonly favoriteGroupId: number | null = null
   ) {
-    this.mainWorkTree = { path }
     this.name = (gitHubRepository && gitHubRepository.name) || getBaseName(path)
 
     this.hash = createEqualityHash(
@@ -85,15 +80,15 @@ export class Repository {
     return this.favoriteGroupId !== null
   }
 
-  public get path(): string {
-    return this.mainWorkTree.path
+  /**
+   * The resolved path to the .git directory for this repository.
+   *
+   * Uses the stored gitDir if available, otherwise falls back to
+   * joining the repository path with '.git'.
+   */
+  public get resolvedGitDir(): string {
+    return this.gitDir ?? Path.join(this.path, '.git')
   }
-}
-
-/** A worktree linked to a main working tree (aka `Repository`) */
-export type LinkedWorkTree = WorkingTree & {
-  /** The sha of the head commit in this work tree */
-  readonly head: string
 }
 
 /** Identical to `Repository`, except it **must** have a `gitHubRepository` */
