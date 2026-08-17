@@ -36,7 +36,9 @@ assert(releases.length > 0, 'Expected at least one release')
 
 for (const release of releases) {
   assert(
-    /^([0-9]+.[0-9]+.[0-9]+)(-beta[0-9]+|-test[0-9]+)?$/.test(release),
+    /^([0-9]+.[0-9]+.[0-9]+)(-beta[0-9]+|-test[0-9]+|-plus\.[0-9]+)?$/.test(
+      release
+    ),
     `Release ${release} does not match the expected format`
   )
   const changes = changelogObj['releases'][release]
