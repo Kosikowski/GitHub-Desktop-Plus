@@ -52,6 +52,10 @@ jobs:
 
       - name: Determine previous and next versions
         id: version
+        env:
+          # The plus channel anchors X.Y.Z to upstream's latest stable via
+          # `gh release list --repo desktop/desktop`, which needs a token.
+          GH_TOKEN: ${{ github.token }}
         run: >
           yarn ts-node -P script/tsconfig.json script/draft-release/ci.ts
           version ${{ inputs.channel }}
