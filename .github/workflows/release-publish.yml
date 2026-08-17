@@ -5,24 +5,18 @@ name: 'Publish Release'
 # tags the merge commit `release-<version>`, and creates a GitHub Release
 # with the changelog.json entry as release notes.
 #
-# Can also be dispatched manually to re-publish a version whose automatic
-# run failed; every step is idempotent.
+# Deliberately has no workflow_dispatch trigger: letting this workflow run
+# from an arbitrary ref would pass that ref to ci.yml, which restores and
+# saves the shared yarn cache while this workflow holds contents: write —
+# CodeQL flags that as cache poisoning of the default branch
+# (actions/cache-poisoning/poisonable-step). To re-publish a failed
+# release, re-run the failed jobs of the original run; the tag and release
+# steps below are idempotent.
 
 on:
   pull_request:
     types: [closed]
     branches: [development]
-  # Manual re-publish for when the automatic run failed after the release
-  # PR was already merged. Run it from the ref you want to release (the
-  # release tag or the merge commit's branch); the tag and release steps
-  # are idempotent.
-  workflow_dispatch:
-    inputs:
-      version:
-        description:
-          'Version to publish, e.g. 3.6.4-plus.1 (no release- prefix)'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -31,9 +25,8 @@ jobs:
   detect:
     name: Detect release branch
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true &&
-       startsWith(github.event.pull_request.head.ref, 'releases/'))
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'releases/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,19 +34,14 @@ jobs:
       version: ${{ steps.parse.outputs.version }}
       tag: ${{ steps.parse.outputs.tag }}
       prerelease: ${{ steps.parse.outputs.prerelease }}
-      sha: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+      sha: ${{ github.event.pull_request.merge_commit_sha }}
     steps:
       - name: Parse version from branch name
         id: parse
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "$INPUT_VERSION" ]; then
-            VERSION="$INPUT_VERSION"
-          else
-            VERSION="${BRANCH#releases/}"
-          fi
+          VERSION="${BRANCH#releases/}"
 
           # Beta and test releases are GitHub prereleases; plus and bare
           # production releases are not. update.electronjs.org only serves
