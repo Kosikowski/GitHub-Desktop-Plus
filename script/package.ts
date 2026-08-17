@@ -144,7 +144,18 @@ function packageWindows() {
       // the architecture similar to how the setup exe and msi do so we'll just
       // have to rename them here after the fact.
       const arch = getDistArchitecture()
-      const prefix = `${getWindowsIdentifierName()}-${getVersion()}`
+
+      // Squirrel converts the version to a NuGet-compatible form when naming
+      // the nupkg files: dots in the prerelease part are stripped, so
+      // 3.6.4-plus.1 becomes 3.6.4-plus1 (see electron-winstaller's
+      // convertVersion). Mirror that conversion or the rename won't find
+      // the files.
+      const [mainVersion, ...preRelease] = getVersion().split('-')
+      const nugetVersion =
+        preRelease.length === 0
+          ? mainVersion
+          : `${mainVersion}-${preRelease.join('-').replace(/\./g, '')}`
+      const prefix = `${getWindowsIdentifierName()}-${nugetVersion}`
 
       for (const kind of shouldMakeDelta() ? ['full', 'delta'] : ['full']) {
         const from = join(outputDir, `${prefix}-${kind}.nupkg`)
