@@ -303,7 +303,15 @@ export class RepositoriesStore extends TypedBaseStore<
 
   /** Remove the given repository. */
   public async removeRepository(repository: Repository): Promise<void> {
-    await this.db.repositories.delete(repository.id)
+    await this.db.transaction(
+      'rw',
+      this.db.repositories,
+      this.db.favoriteGroups,
+      async () => {
+        await this.db.repositories.delete(repository.id)
+        await this.clearLastSelectedRepository(repository.id)
+      }
+    )
     clearTagsToPush(repository)
 
     this.emitUpdatedRepositories()
@@ -370,6 +378,10 @@ export class RepositoriesStore extends TypedBaseStore<
           }
         }
         await this.db.repositories.update(repository.id, { favoriteGroupId })
+        // The repository is no longer a member of whichever group it came
+        // from, so that group can't keep pointing at it. The destination group
+        // may legitimately still name it from an earlier stint.
+        await this.clearLastSelectedRepository(repository.id, favoriteGroupId)
       }
     )
 
@@ -386,6 +398,51 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.gitDir,
       favoriteGroupId
     )
+  }
+
+  /**
+   * Remember the repository that was last selected while it belonged to the
+   * given group. Switching back to the group restores it.
+   */
+  public async setFavoriteGroupLastSelectedRepository(
+    favoriteGroupId: number,
+    repositoryId: number | null
+  ): Promise<void> {
+    await this.db.transaction('rw', this.db.favoriteGroups, async () => {
+      const group = await this.db.favoriteGroups.get(favoriteGroupId)
+      if (group === undefined) {
+        throw new UnknownFavoriteGroupError(favoriteGroupId)
+      }
+      await this.db.favoriteGroups.update(favoriteGroupId, {
+        lastSelectedRepositoryId: repositoryId,
+      })
+    })
+    // Deliberately no emitUpdatedRepositories() here: no repository changed,
+    // and this runs on every repository selection.
+  }
+
+  /**
+   * Drop the "last selected repository" pointer from every group naming the
+   * given repository, optionally sparing one group. Callers must include
+   * `favoriteGroups` in their transaction.
+   */
+  private async clearLastSelectedRepository(
+    repositoryId: number,
+    exceptGroupId: number | null = null
+  ): Promise<void> {
+    const groups = await this.db.favoriteGroups.toArray()
+
+    for (const group of groups) {
+      assertNonNullable(group.id, 'Missing favorite group id')
+      if (
+        group.lastSelectedRepositoryId === repositoryId &&
+        group.id !== exceptGroupId
+      ) {
+        await this.db.favoriteGroups.update(group.id, {
+          lastSelectedRepositoryId: null,
+        })
+      }
+    }
   }
 
   /** Return all favorite groups, ordered by sortOrder then id. */
@@ -977,7 +1034,12 @@ function byGroupOrder(a: IDatabaseFavoriteGroup, b: IDatabaseFavoriteGroup) {
 
 function toFavoriteGroup(row: IDatabaseFavoriteGroup): FavoriteGroup {
   assertNonNullable(row.id, 'Missing favorite group id')
-  return new FavoriteGroup(row.id, row.name, row.sortOrder)
+  return new FavoriteGroup(
+    row.id,
+    row.name,
+    row.sortOrder,
+    row.lastSelectedRepositoryId ?? null
+  )
 }
 
 function getPermissionsString(

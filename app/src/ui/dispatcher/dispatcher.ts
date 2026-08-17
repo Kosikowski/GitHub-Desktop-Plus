@@ -902,9 +902,12 @@ export class Dispatcher {
     return this.appStore._removeFavoriteGroup(id)
   }
 
-  /** Set which favorites group tab is currently active in the sidebar. */
-  public setFavoritesActiveGroupId(id: number | null): void {
-    this.appStore._setFavoritesActiveGroupId(id)
+  /**
+   * Set which favorites group tab is currently active in the sidebar, and
+   * restore the repository last selected in that group.
+   */
+  public setFavoritesActiveGroupId(id: number | null): Promise<void> {
+    return this.appStore._setFavoritesActiveGroupId(id)
   }
 
   /** Rename the branch to a new name. */
