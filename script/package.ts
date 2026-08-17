@@ -17,10 +17,10 @@ import {
   getDistRoot,
   getDistArchitecture,
   getIconDirectory,
+  getNuGetVersion,
 } from './dist-info'
 import { isGitHubActions } from './build-platforms'
 import { existsSync, rmSync, writeFileSync } from 'fs'
-import { getVersion } from '../app/package-info'
 import { computeBundleHashSync } from '../app/src/lib/compute-bundle-hash'
 import { rename } from 'fs/promises'
 import { join } from 'path'
@@ -145,17 +145,10 @@ function packageWindows() {
       // have to rename them here after the fact.
       const arch = getDistArchitecture()
 
-      // Squirrel converts the version to a NuGet-compatible form when naming
-      // the nupkg files: dots in the prerelease part are stripped, so
-      // 3.6.4-plus.1 becomes 3.6.4-plus1 (see electron-winstaller's
-      // convertVersion). Mirror that conversion or the rename won't find
-      // the files.
-      const [mainVersion, ...preRelease] = getVersion().split('-')
-      const nugetVersion =
-        preRelease.length === 0
-          ? mainVersion
-          : `${mainVersion}-${preRelease.join('-').replace(/\./g, '')}`
-      const prefix = `${getWindowsIdentifierName()}-${nugetVersion}`
+      // Squirrel names the nupkg files with the NuGet-compatible form of
+      // the version (3.6.4-plus.1 becomes 3.6.4-plus1), so mirror that
+      // conversion or the rename won't find the files.
+      const prefix = `${getWindowsIdentifierName()}-${getNuGetVersion()}`
 
       for (const kind of shouldMakeDelta() ? ['full', 'delta'] : ['full']) {
         const from = join(outputDir, `${prefix}-${kind}.nupkg`)

@@ -58,13 +58,26 @@ export function getWindowsStandalonePath() {
   return Path.join(getDistPath(), '..', 'installer', getWindowsStandaloneName())
 }
 
+/**
+ * The NuGet-compatible form of the app version that Squirrel.Windows uses
+ * when naming package files: dots in the prerelease part are stripped
+ * (3.6.4-plus.1 becomes 3.6.4-plus1), mirroring electron-winstaller's
+ * convertVersion.
+ */
+export function getNuGetVersion() {
+  const [mainVersion, ...preRelease] = version.split('-')
+  return preRelease.length === 0
+    ? mainVersion
+    : `${mainVersion}-${preRelease.join('-').replace(/\./g, '')}`
+}
+
 export function getWindowsFullNugetPackageName(
   includeArchitecture: boolean = false
 ) {
   const architectureInfix = includeArchitecture
     ? `-${getDistArchitecture()}`
     : ''
-  return `${getWindowsIdentifierName()}-${version}${architectureInfix}-full.nupkg`
+  return `${getWindowsIdentifierName()}-${getNuGetVersion()}${architectureInfix}-full.nupkg`
 }
 
 export function getWindowsFullNugetPackagePath() {
@@ -82,7 +95,7 @@ export function getWindowsDeltaNugetPackageName(
   const architectureInfix = includeArchitecture
     ? `-${getDistArchitecture()}`
     : ''
-  return `${getWindowsIdentifierName()}-${version}${architectureInfix}-delta.nupkg`
+  return `${getWindowsIdentifierName()}-${getNuGetVersion()}${architectureInfix}-delta.nupkg`
 }
 
 export function getWindowsDeltaNugetPackagePath() {
