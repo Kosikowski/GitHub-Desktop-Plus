@@ -79,6 +79,10 @@ import {
 } from '../../models/repository'
 import { FavoriteGroup } from '../../models/favorite-group'
 import {
+  resolveFavoriteGroupSelection,
+  shouldActivateFavoriteGroup,
+} from '../favorites-selection'
+import {
   CommittedFileChange,
   WorkingDirectoryFileChange,
   WorkingDirectoryStatus,
@@ -2094,6 +2098,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     setNumber(LastSelectedRepositoryIDKey, repository.id)
+    this.rememberFavoriteGroupSelection(
+      repository,
+      previouslySelectedRepository
+    )
 
     const previousRepositoryId = previouslySelectedRepository
       ? previouslySelectedRepository.id
@@ -4932,10 +4940,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       repository,
       favoriteGroupId
     )
-    // The set of favorite groups doesn't change when a repo moves between
-    // them, so don't refreshFavoriteGroups here — the store's own
-    // `emitUpdatedRepositories` (queued by the call above) is what carries
-    // the repo's new favoriteGroupId into the next render.
+    // The repo's new favoriteGroupId reaches the next render through the
+    // store's own `emitUpdatedRepositories`, but leaving the group is what
+    // drops it from its old group's remembered selection, so the groups
+    // themselves have to be re-read to stay in step with the database.
+    await this.refreshFavoriteGroups()
 
     if (shouldRevealSidebar && !this.showFavoritesSidebar) {
       this.showFavoritesSidebar = true
@@ -4955,7 +4964,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Activate the freshly created group so the sidebar tab follows the
     // user's intent — especially in the "create + assign" flow where a repo
     // is being moved into the new group.
-    this._setFavoritesActiveGroupId(group.id)
+    this.persistFavoritesActiveGroupId(group.id)
     return group
   }
 
@@ -4972,7 +4981,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // so `resolveActiveFavoritesGroupId` doesn't keep papering over a stale
     // localStorage value on every render.
     if (this.favoritesActiveGroupId === id) {
-      this._setFavoritesActiveGroupId(null)
+      this.persistFavoritesActiveGroupId(null)
     }
     await this.refreshFavoriteGroups()
   }
@@ -4998,10 +5007,42 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return favoriteGroups[0]?.id ?? null
   }
 
-  /** This shouldn't be called directly. See `Dispatcher`. */
-  public _setFavoritesActiveGroupId(id: number | null) {
-    if (id === this.favoritesActiveGroupId) {
+  /**
+   * Activate a favorites group and select the repository that was last
+   * selected while that group was active. Groups without a usable memory
+   * (never selected from, or the repository has since been removed or moved
+   * elsewhere) leave the current selection untouched.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _setFavoritesActiveGroupId(id: number | null): Promise<void> {
+    if (!this.persistFavoritesActiveGroupId(id) || id === null) {
       return
+    }
+
+    const group = this.favoriteGroups.find(g => g.id === id) ?? null
+    const repository = resolveFavoriteGroupSelection(group, this.repositories)
+
+    if (repository === null) {
+      return
+    }
+
+    const isAlreadySelected =
+      this.selectedRepository instanceof Repository &&
+      this.selectedRepository.id === repository.id
+
+    if (!isAlreadySelected) {
+      await this._selectRepository(repository)
+    }
+  }
+
+  /**
+   * Persist the active group without touching the repository selection.
+   * Returns whether the active group actually changed.
+   */
+  private persistFavoritesActiveGroupId(id: number | null): boolean {
+    if (id === this.favoritesActiveGroupId) {
+      return false
     }
     this.favoritesActiveGroupId = id
     if (id === null) {
@@ -5010,6 +5051,73 @@ export class AppStore extends TypedBaseStore<IAppState> {
       setNumber(favoritesActiveGroupIdKey, id)
     }
     this.emitUpdate()
+    return true
+  }
+
+  /**
+   * Record a newly selected repository as its group's most recent selection
+   * and bring that group's tab to the front. Repositories outside any group
+   * leave both alone.
+   */
+  private rememberFavoriteGroupSelection(
+    repository: Repository,
+    previouslySelectedRepository: Repository | CloningRepository | null
+  ) {
+    const groupId = repository.favoriteGroupId
+    if (groupId === null) {
+      return
+    }
+
+    const group = this.favoriteGroups.find(g => g.id === groupId)
+    if (group === undefined) {
+      return
+    }
+
+    if (group.lastSelectedRepositoryId !== repository.id) {
+      // Selecting a repository shouldn't wait on the database, so the write
+      // runs on its own and the cached groups follow it rather than lead it —
+      // a failed write then simply leaves the old pointer in place to be
+      // retried by the next selection.
+      this.repositoriesStore
+        .setFavoriteGroupLastSelectedRepository(groupId, repository.id)
+        .then(() =>
+          this.updateCachedFavoriteGroupSelection(groupId, repository)
+        )
+        .catch(e =>
+          log.error(
+            `Failed remembering repository ${repository.id} for favorites group ${groupId}`,
+            e
+          )
+        )
+    }
+
+    if (shouldActivateFavoriteGroup(repository, previouslySelectedRepository)) {
+      this.persistFavoritesActiveGroupId(groupId)
+    }
+  }
+
+  /**
+   * Mirror a persisted "last selected repository" into the cached groups. The
+   * group may have been deleted or re-read while the write was in flight, in
+   * which case there's nothing to mirror.
+   */
+  private updateCachedFavoriteGroupSelection(
+    groupId: number,
+    repository: Repository
+  ) {
+    const group = this.favoriteGroups.find(g => g.id === groupId)
+    if (
+      group === undefined ||
+      group.lastSelectedRepositoryId === repository.id
+    ) {
+      return
+    }
+
+    this.favoriteGroups = this.favoriteGroups.map(g =>
+      g.id === groupId
+        ? new FavoriteGroup(g.id, g.name, g.sortOrder, repository.id)
+        : g
+    )
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */

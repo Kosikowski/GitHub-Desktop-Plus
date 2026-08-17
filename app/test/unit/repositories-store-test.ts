@@ -260,4 +260,168 @@ describe('RepositoriesStore', () => {
       assert.equal(repos[0].favoriteGroupId, null)
     })
   })
+
+  describe('remembering the last selected repository of a group', () => {
+    const lastSelectedIdOf = async (groupId: number) => {
+      const groups = await repositoriesStore.getAllFavoriteGroups()
+      const group = groups.find(g => g.id === groupId)
+      assert.ok(group !== undefined, `no group with id ${groupId}`)
+      return group.lastSelectedRepositoryId
+    }
+
+    it('defaults to null on a newly created group', async () => {
+      const group = await repositoriesStore.addFavoriteGroup('Work')
+      assert.equal(group.lastSelectedRepositoryId, null)
+      assert.equal(await lastSelectedIdOf(group.id), null)
+    })
+
+    it('persists the remembered repository', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      const group = await repositoriesStore.addFavoriteGroup('Work')
+      await repositoriesStore.setRepositoryFavoriteGroup(repo, group.id)
+
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        group.id,
+        repo.id
+      )
+
+      assert.equal(await lastSelectedIdOf(group.id), repo.id)
+    })
+
+    it('remembers a repository per group', async () => {
+      const repoA = await repositoriesStore.addRepository('/path/a', undefined)
+      const repoB = await repositoriesStore.addRepository('/path/b', undefined)
+      const work = await repositoriesStore.addFavoriteGroup('Work')
+      const personal = await repositoriesStore.addFavoriteGroup('Personal')
+      await repositoriesStore.setRepositoryFavoriteGroup(repoA, work.id)
+      await repositoriesStore.setRepositoryFavoriteGroup(repoB, personal.id)
+
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        work.id,
+        repoA.id
+      )
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        personal.id,
+        repoB.id
+      )
+
+      assert.equal(await lastSelectedIdOf(work.id), repoA.id)
+      assert.equal(await lastSelectedIdOf(personal.id), repoB.id)
+    })
+
+    it('forgets the repository when passed null', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      const group = await repositoriesStore.addFavoriteGroup('Work')
+      await repositoriesStore.setRepositoryFavoriteGroup(repo, group.id)
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        group.id,
+        repo.id
+      )
+
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        group.id,
+        null
+      )
+
+      assert.equal(await lastSelectedIdOf(group.id), null)
+    })
+
+    it('rejects remembering for a non-existent group', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      await assert.rejects(
+        repositoriesStore.setFavoriteGroupLastSelectedRepository(9999, repo.id),
+        UnknownFavoriteGroupError
+      )
+    })
+
+    it('forgets the repository when it moves to another group', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      const work = await repositoriesStore.addFavoriteGroup('Work')
+      const personal = await repositoriesStore.addFavoriteGroup('Personal')
+      const assigned = await repositoriesStore.setRepositoryFavoriteGroup(
+        repo,
+        work.id
+      )
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        work.id,
+        repo.id
+      )
+
+      await repositoriesStore.setRepositoryFavoriteGroup(assigned, personal.id)
+
+      assert.equal(await lastSelectedIdOf(work.id), null)
+      assert.equal(await lastSelectedIdOf(personal.id), null)
+    })
+
+    it('forgets the repository when it stops being a favorite', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      const group = await repositoriesStore.addFavoriteGroup('Work')
+      const assigned = await repositoriesStore.setRepositoryFavoriteGroup(
+        repo,
+        group.id
+      )
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        group.id,
+        repo.id
+      )
+
+      await repositoriesStore.setRepositoryFavoriteGroup(assigned, null)
+
+      assert.equal(await lastSelectedIdOf(group.id), null)
+    })
+
+    it('keeps the memory when a repository is reassigned to its own group', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      const group = await repositoriesStore.addFavoriteGroup('Work')
+      const assigned = await repositoriesStore.setRepositoryFavoriteGroup(
+        repo,
+        group.id
+      )
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        group.id,
+        repo.id
+      )
+
+      await repositoriesStore.setRepositoryFavoriteGroup(assigned, group.id)
+
+      assert.equal(await lastSelectedIdOf(group.id), repo.id)
+    })
+
+    it('forgets the repository when it is removed, leaving other groups alone', async () => {
+      const repoA = await repositoriesStore.addRepository('/path/a', undefined)
+      const repoB = await repositoriesStore.addRepository('/path/b', undefined)
+      const work = await repositoriesStore.addFavoriteGroup('Work')
+      const personal = await repositoriesStore.addFavoriteGroup('Personal')
+      await repositoriesStore.setRepositoryFavoriteGroup(repoA, work.id)
+      await repositoriesStore.setRepositoryFavoriteGroup(repoB, personal.id)
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        work.id,
+        repoA.id
+      )
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        personal.id,
+        repoB.id
+      )
+
+      await repositoriesStore.removeRepository(repoA)
+
+      assert.equal(await lastSelectedIdOf(work.id), null)
+      assert.equal(await lastSelectedIdOf(personal.id), repoB.id)
+    })
+
+    it('drops the memory along with the group', async () => {
+      const repo = await repositoriesStore.addRepository('/path/a', undefined)
+      const group = await repositoriesStore.addFavoriteGroup('Work')
+      await repositoriesStore.setRepositoryFavoriteGroup(repo, group.id)
+      await repositoriesStore.setFavoriteGroupLastSelectedRepository(
+        group.id,
+        repo.id
+      )
+
+      await repositoriesStore.removeFavoriteGroup(group.id)
+
+      const groups = await repositoriesStore.getAllFavoriteGroups()
+      assert.equal(groups.length, 0)
+    })
+  })
 })

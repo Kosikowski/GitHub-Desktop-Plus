@@ -87,6 +87,13 @@ export interface IDatabaseFavoriteGroup {
    */
   readonly nameKey?: string
   readonly sortOrder: number
+
+  /**
+   * The repository that was last selected while it belonged to this group, or
+   * null/undefined when the group has never had one selected. Not indexed, so
+   * introducing it needs no schema version of its own.
+   */
+  readonly lastSelectedRepositoryId?: number | null
 }
 
 /**
