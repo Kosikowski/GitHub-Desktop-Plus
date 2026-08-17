@@ -4,11 +4,25 @@ name: 'Publish Release'
 # `development`. Builds all four platform artifacts via the shared ci.yml,
 # tags the merge commit `release-<version>`, and creates a GitHub Release
 # with the changelog.json entry as release notes.
+#
+# Can also be dispatched manually to re-publish a version whose automatic
+# run failed; every step is idempotent.
 
 on:
   pull_request:
     types: [closed]
     branches: [development]
+  # Manual re-publish for when the automatic run failed after the release
+  # PR was already merged. Run it from the ref you want to release (the
+  # release tag or the merge commit's branch); the tag and release steps
+  # are idempotent.
+  workflow_dispatch:
+    inputs:
+      version:
+        description:
+          'Version to publish, e.g. 3.6.4-plus.1 (no release- prefix)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,8 +31,9 @@ jobs:
   detect:
     name: Detect release branch
     if: |
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.head.ref, 'releases/')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'releases/'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,14 +41,19 @@ jobs:
       version: ${{ steps.parse.outputs.version }}
       tag: ${{ steps.parse.outputs.tag }}
       prerelease: ${{ steps.parse.outputs.prerelease }}
-      sha: ${{ github.event.pull_request.merge_commit_sha }}
+      sha: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
     steps:
       - name: Parse version from branch name
         id: parse
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${BRANCH#releases/}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${BRANCH#releases/}"
+          fi
 
           # Beta and test releases are GitHub prereleases; plus and bare
           # production releases are not. update.electronjs.org only serves
@@ -146,10 +166,17 @@ jobs:
           fi
 
           # Flatten the per-job artifact directories produced by
-          # actions/download-artifact@v4 into a flat asset list. Use an
-          # array — asset file names contain spaces (the product name is
-          # "GitHub Desktop +"), so unquoted word-splitting breaks them.
-          mapfile -t ASSETS < <(find artifacts -type f \
+          # actions/download-artifact@v4 into a flat asset list. Read into an
+          # array rather than a word-split string so paths survive verbatim.
+          #
+          # The e2e-* artifacts hold Playwright debug output, including
+          # trace-*.zip files that must never end up on a public release, so
+          # skip those directories entirely.
+          ASSETS=()
+          while IFS= read -r asset; do
+            ASSETS+=("$asset")
+          done < <(find artifacts -type f \
+            -not -path 'artifacts/e2e-*' \
             \( -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.nupkg' \))
 
           if [ "${#ASSETS[@]}" -eq 0 ]; then
@@ -157,14 +184,32 @@ jobs:
             exit 1
           fi
 
+          echo "Attaching ${#ASSETS[@]} assets:"
+          printf '  %s\n' "${ASSETS[@]}"
+
           # Idempotent so a failed publish can be re-run: if the release
-          # already exists just (re-)upload the assets.
+          # already exists just (re-)upload the assets. `gh release create`
+          # creates the release as a draft and only publishes it once every
+          # asset finished uploading, so a run that died mid-upload leaves a
+          # draft behind — publish it explicitly rather than leaving a
+          # release nobody can see.
           if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
             echo "Release $TAG already exists — uploading assets to it."
             gh release upload "$TAG" \
               --repo "${{ github.repository }}" \
               --clobber \
               "${ASSETS[@]}"
+
+            IS_LATEST=true
+            if [ "$PRERELEASE" = "true" ]; then
+              IS_LATEST=false
+            fi
+
+            gh release edit "$TAG" \
+              --repo "${{ github.repository }}" \
+              --draft=false \
+              --prerelease="$PRERELEASE" \
+              --latest="$IS_LATEST"
           else
             gh release create "$TAG" \
               --repo "${{ github.repository }}" \
