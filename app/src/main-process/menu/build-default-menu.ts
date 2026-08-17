@@ -239,7 +239,7 @@ export function buildDefaultMenuTemplate({
       {
         label: __DARWIN__
           ? `${isFavoritesSidebarVisible ? 'Hide' : 'Show'} Favorites Sidebar`
-          : `${isFavoritesSidebarVisible ? 'Hide' : 'Show'} &Favorites Sidebar`,
+          : `${isFavoritesSidebarVisible ? 'Hide' : 'Show'} F&avorites Sidebar`,
         id: 'toggle-favorites-sidebar',
         accelerator: 'CmdOrCtrl+Shift+L',
         click: emit('toggle-favorites-sidebar'),
